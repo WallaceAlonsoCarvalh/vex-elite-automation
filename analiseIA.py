@@ -20,19 +20,27 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- BUSCA DE DADOS OTIMIZADA ---
+# --- BUSCA DE DADOS (USANDO BYBIT PARA EVITAR BLOQUEIO EUA) ---
 def get_live_data(symbol):
     try:
-        # Criamos a conexão com timeout maior para evitar travamentos
-        exchange = ccxt.binance({'timeout': 20000, 'enableRateLimit': True})
+        # Tenta Bybit que tem menos restrições geográficas que a Binance nos servidores Streamlit
+        exchange = ccxt.bybit({'timeout': 20000, 'enableRateLimit': True})
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe='1m', limit=60)
         if not ohlcv: return None
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
     except Exception as e:
-        st.error(f"Erro na API: {e}")
-        return None
+        # Se falhar, tenta outra exchange estável
+        try:
+            exchange = ccxt.kucoin({'timeout': 20000})
+            ohlcv = exchange.fetch_ohlcv(symbol, timeframe='1m', limit=60)
+            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            return df
+        except:
+            st.error("Erro de conexão regional. O servidor da Binance bloqueou o acesso dos EUA. Tente novamente em instantes.")
+            return None
 
 def analyze_market(df):
     close = df['close']
@@ -56,10 +64,11 @@ def analyze_market(df):
 st.markdown('<h1 class="hero-title">VEX ELITE AUTOMATION</h1>', unsafe_allow_html=True)
 st.markdown('<div class="warning-box">⚠️ RECOMENDAÇÃO: ENTRADAS ABAIXO DE 90% POSSUEM RISCO ELEVADO.</div>', unsafe_allow_html=True)
 
+# Lista de ativos ajustada para compatibilidade global
 ativo = st.sidebar.selectbox("ESCOLHA O ATIVO:", ["BNB/USDT", "BTC/USDT", "ETH/USDT", "SOL/USDT"])
 
 if st.button("🚀 GERAR ENTRADA PARA PRÓXIMA VELA"):
-    with st.spinner('Escaneando mercado...'):
+    with st.spinner('Acessando dados globais...'):
         df = get_live_data(ativo)
         
         if df is not None:
@@ -78,6 +87,6 @@ if st.button("🚀 GERAR ENTRADA PARA PRÓXIMA VELA"):
                 cor_txt = "black" if sig == "COMPRA" else "white"
                 st.markdown(f'<div style="background:{cor_bg}; color:{cor_txt}; padding:30px; border-radius:15px; text-align:center;"><h2 style="margin:0;">{"▲" if sig == "COMPRA" else "▼"} {sig}</h2></div>', unsafe_allow_html=True)
         else:
-            st.warning("A corretora demorou a responder. Clique novamente em 5 segundos.")
+            st.warning("Conexão instável. Clique novamente em 5 segundos.")
 
 st.markdown('<p style="text-align:center; color:#333; margin-top:80px;">VEX ELITE © 2026</p>', unsafe_allow_html=True)
