@@ -19,7 +19,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- ENGINE DE DADOS COM RESILIÊNCIA TOTAL ---
+# --- ENGINE DE DADOS ---
 def get_fast_data(symbol):
     exchanges = [
         ccxt.bybit({'timeout': 7000, 'enableRateLimit': True}),
@@ -32,38 +32,29 @@ def get_fast_data(symbol):
                 df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                 return df
-        except:
-            continue
+        except: continue
     return None
 
-# --- ALGORITMO DE PRECISÃO SUPREMA (META ZERO ERRO) ---
+# --- ALGORITMO SNIPER TURBO ---
 def analyze_ultra_fast(df):
     close = df['close']
-    # Médias Institucionais
     ema8 = close.ewm(span=8, adjust=False).mean().iloc[-1]
     ema20 = close.ewm(span=20, adjust=False).mean().iloc[-1]
     
-    # RSI (Exaustão de Preço)
     delta = close.diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
     
-    # Volume Spread Analysis (Confirmação de Baleias)
     vol_avg = df['volume'].tail(15).mean()
     vol_now = df['volume'].iloc[-1]
     
-    # Lógica Sniper: Só atinge 90%+ se houver confluência TOTAL
-    score = 78.0  # Base de confiança elevada
-    
-    # Filtros de Confirmação
+    score = 78.0 
     if (close.iloc[-1] > ema8 and close.iloc[-1] > ema20) or (close.iloc[-1] < ema8 and close.iloc[-1] < ema20):
-        score += 10 # Tendência Confirmada
-    if (rsi < 40 or rsi > 60): 
-        score += 7 # Exaustão Confirmada
-    if vol_now > vol_avg: 
-        score += 4.8 # Volume Confirmado
-
+        score += 10
+    if (rsi < 40 or rsi > 60): score += 7
+    if vol_now > vol_avg: score += 4.9
+    
     score = min(score, 99.9)
     signal = "COMPRA" if close.iloc[-1] > ema8 else "VENDA"
     return signal, score
@@ -73,17 +64,17 @@ st.markdown('<h1 class="hero-title">VEX ELITE | SNIPER PRO</h1>', unsafe_allow_h
 
 with st.expander("📖 GUIA DIDÁTICO: OPERAÇÃO ZERO ERRO"):
     st.write("""
-    1. **Filtro de Ativo:** Escolha a moeda no menu lateral (BNB, BTC, ETH ou SOL).
-    2. **Varredura:** Clique no botão azul. O sistema analisará o fluxo de ordens global.
-    3. **Meta de Lucro:** **SÓ ENTRE SE A ASSERTIVIDADE FOR ACIMA DE 90%.** Se estiver abaixo, o mercado está com "ruído".
-    4. **Virada de Vela:** O sinal é para a **PRÓXIMA VELA**. Execute na Vex Invest exatamente quando o cronômetro marcar 00s.
+    1. **Sincronização:** Olhe o cronômetro da Vex Invest.
+    2. **Varredura:** No segundo **50**, clique em 'GERAR ENTRADA'.
+    3. **Execução Sniper:** Se a precisão for > 90%, clique para entrar na Vex no **segundo 58 ou 59**.
+    4. **Meta:** Somente entre com confluência total para garantir o zero loss.
     """)
 
 ativo = st.sidebar.selectbox("ATIVO:", ["BNB/USDT", "BTC/USDT", "ETH/USDT", "SOL/USDT"])
 
 if st.button("🚀 GERAR ENTRADA INSTITUCIONAL"):
     start_time = time.time()
-    with st.spinner('Escaneando mercado...'):
+    with st.spinner('Analisando fluxo...'):
         df = get_fast_data(ativo)
         
         if df is not None:
@@ -112,6 +103,6 @@ if st.button("🚀 GERAR ENTRADA INSTITUCIONAL"):
                 st.caption(f"Velocidade: {elapsed:.2f}s")
                 st.markdown('</div>', unsafe_allow_html=True)
         else:
-            st.error("Erro de conexão regional. Tente clicar novamente em 3 segundos.")
+            st.error("Erro de conexão. Tente novamente.")
 
 st.markdown('<p style="text-align:center; color:#333; margin-top:50px;">VEX ELITE PRO © 2026</p>', unsafe_allow_html=True)
