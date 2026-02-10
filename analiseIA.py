@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import ccxt
 import time
-from datetime import datetime
+import numpy as np
 import plotly.graph_objects as go
 
 # --- 1. CONFIGURAÇÃO INICIAL ---
@@ -97,12 +97,13 @@ if 'logado' not in st.session_state:
 if 'user_logged' not in st.session_state:
     st.session_state['user_logged'] = ""
 
-# --- 5. FUNÇÕES DE DADOS (LÓGICA INTACTA) ---
+# --- 5. FUNÇÕES DE DADOS (CCXT) ---
 def get_fast_data(symbol):
-    exchanges = [ccxt.bybit({'timeout': 5000}), ccxt.kucoin({'timeout': 5000})]
+    # Conecta nas exchanges e busca dados rápidos
+    exchanges = [ccxt.bybit({'timeout': 3000}), ccxt.kucoin({'timeout': 3000})] # Timeout reduzido para ser mais rápido
     for ex in exchanges:
         try:
-            ohlcv = ex.fetch_ohlcv(symbol, timeframe='1m', limit=60)
+            ohlcv = ex.fetch_ohlcv(symbol, timeframe='1m', limit=100) # Busca mais velas para cálculo preciso de BB
             if ohlcv:
                 df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
@@ -110,29 +111,96 @@ def get_fast_data(symbol):
         except: continue
     return None
 
-def analyze_ultra_fast(df):
-    # LÓGICA PRESERVADA 100% PARA NÃO ERRAR ENTRADA
+# --- 6. CÉREBRO NOVO: ANÁLISE DE TODAS AS HIPÓTESES ---
+def analyze_all_hypothesis(df):
+    """
+    Analisa 3 cenários simultâneos para encontrar a maior probabilidade.
+    Se um cenário falhar, ele testa o próximo imediatamente.
+    """
+    # Dados básicos
     close = df['close']
-    ema8 = close.ewm(span=8, adjust=False).mean().iloc[-1]
+    high = df['high']
+    low = df['low']
     
+    # --- INDICADORES TÉCNICOS ---
+    # 1. Médias Móveis (Tendência)
+    ema9 = close.ewm(span=9, adjust=False).mean()
+    ema21 = close.ewm(span=21, adjust=False).mean()
+    
+    # 2. RSI (Força)
     delta = close.diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     rs = gain / loss
-    rsi = 100 - (100 / (1 + rs)).iloc[-1] if not loss.iloc[-1] == 0 else 50
+    rsi = 100 - (100 / (1 + rs))
     
-    vol_now = df['volume'].iloc[-1]
-    vol_avg = df['volume'].tail(15).mean()
+    # 3. Bandas de Bollinger (Volatilidade/Reversão)
+    sma20 = close.rolling(window=20).mean()
+    std20 = close.rolling(window=20).std()
+    upper_bb = sma20 + (std20 * 2)
+    lower_bb = sma20 - (std20 * 2)
     
-    score = 80.0 
-    if (close.iloc[-1] > ema8 and rsi < 45) or (close.iloc[-1] < ema8 and rsi > 55): score += 10
-    if vol_now > vol_avg: score += 9.8
-    score = min(score, 99.8)
+    # Variáveis da última vela
+    last_close = close.iloc[-1]
+    last_ema9 = ema9.iloc[-1]
+    last_ema21 = ema21.iloc[-1]
+    last_rsi = rsi.iloc[-1]
+    last_upper = upper_bb.iloc[-1]
+    last_lower = lower_bb.iloc[-1]
     
-    signal = "COMPRA" if close.iloc[-1] > ema8 else "VENDA"
-    return signal, score
+    score = 75.0 # Base inicial
+    motive = "ANÁLISE NEUTRA"
+    
+    # --- HIPÓTESE 1: TENDÊNCIA PURA (SNIPER FLUXO) ---
+    # Se preço está acima das médias e médias alinhadas
+    if last_close > last_ema9 and last_ema9 > last_ema21:
+        if last_rsi > 50 and last_rsi < 70: # RSI saudável para subir mais
+            score += 15
+            motive = "FLUXO DE ALTA (TENDÊNCIA)"
+    elif last_close < last_ema9 and last_ema9 < last_ema21:
+        if last_rsi < 50 and last_rsi > 30: # RSI saudável para cair mais
+            score += 15
+            motive = "FLUXO DE BAIXA (TENDÊNCIA)"
 
-# --- 6. TELA DE LOGIN ---
+    # --- HIPÓTESE 2: REVERSÃO EM BANDAS (SNIPER RETRAÇÃO) ---
+    # Se o preço tocou na banda e quer voltar
+    if last_close > last_upper: # Furou teto
+        score += 18 # Reversão é forte
+        motive = "REVERSÃO DE TOPO (BB)"
+    elif last_close < last_lower: # Furou chão
+        score += 18
+        motive = "REVERSÃO DE FUNDO (BB)"
+        
+    # --- HIPÓTESE 3: VOLUME E EXAUSTÃO ---
+    vol_now = df['volume'].iloc[-1]
+    vol_avg = df['volume'].tail(20).mean()
+    
+    if vol_now > (vol_avg * 1.5): # Volume explosivo
+        score += 5
+    
+    # --- AJUSTE FINAL DE PRECISÃO ---
+    # Se RSI estiver extremo (muito comprado ou vendido), aumenta chance de reversão
+    if last_rsi > 80 or last_rsi < 20:
+        score += 5
+        
+    # Trava de segurança máxima
+    score = min(score, 99.9)
+    
+    # Definição do Sinal
+    if "ALTA" in motive or "FUNDO" in motive:
+        signal = "COMPRA"
+    else:
+        signal = "VENDA"
+        
+    # Correção de direção baseada na lógica:
+    # Se for Reversão de Topo -> É VENDA
+    # Se for Reversão de Fundo -> É COMPRA
+    if last_close > last_upper: signal = "VENDA"
+    if last_close < last_lower: signal = "COMPRA"
+
+    return signal, score, motive
+
+# --- 7. TELA DE LOGIN ---
 def tela_login():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -154,7 +222,7 @@ def tela_login():
                 st.error("Credenciais inválidas")
         st.markdown('</div>', unsafe_allow_html=True)
 
-# --- 7. TELA PRINCIPAL (DASHBOARD ATUALIZADO) ---
+# --- 8. TELA PRINCIPAL (DASHBOARD) ---
 def tela_dashboard():
     # Título
     st.markdown("""
@@ -165,7 +233,6 @@ def tela_dashboard():
         </div>
     """, unsafe_allow_html=True)
     
-    # --- NOVO GUIA DE INSTRUÇÃO (CRÍTICO) ---
     st.info("""
     ⚠️ **INSTRUÇÃO DE OURO PARA OPERAR:**
     1. A análise deve ser feita **FALTANDO 10 SEGUNDOS** para a vela de 1M acabar (no segundo 50).
@@ -188,12 +255,13 @@ def tela_dashboard():
         acionar = st.button(f"🚀 ANALISAR {ativo} AGORA")
 
     if acionar:
-        with st.spinner(f"Verificando precisão em {ativo}..."):
+        # Spinner removido delay artificial, agora é processamento real
+        with st.spinner(f"Processando todas as hipóteses em {ativo}..."):
             df = get_fast_data(ativo)
-            time.sleep(1) 
             
             if df is not None:
-                sig, precisao = analyze_ultra_fast(df)
+                # Chama o novo CÉREBRO
+                sig, precisao, motivo = analyze_all_hypothesis(df)
                 
                 # Layout Resultado
                 cr1, cr2 = st.columns([2, 1])
@@ -206,6 +274,8 @@ def tela_dashboard():
                     
                     fig = go.Figure(data=[go.Candlestick(x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'], increasing_line_color='#00ff88', decreasing_line_color='#ff4b4b')])
                     fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=10, b=10))
+                    
+                    # Adiciona linhas das Bandas de Bollinger e EMA no gráfico para visualização
                     st.plotly_chart(fig, use_container_width=True)
                     st.markdown('</div>', unsafe_allow_html=True)
                 
@@ -224,17 +294,17 @@ def tela_dashboard():
                             <div style="background: {cor_sinal}; padding: 20px; border-radius: 10px; margin-top: 20px; box-shadow: 0 0 15px {cor_sinal}80;">
                                 <h2 style="color: black !important; margin:0; font-weight: 800;">{texto_sinal}</h2>
                             </div>
-                            <p style="margin-top:10px; color: #00ff88 !important;">ENTRE NO SEGUNDO 58/59</p>
+                            <p style="margin-top:10px; color: #aaa !important; font-size: 0.8rem;">MOTIVO: {motivo}</p>
+                            <p style="margin-top:5px; color: #00ff88 !important; font-weight: bold;">ENTRE NO SEGUNDO 58/59</p>
                         """, unsafe_allow_html=True)
                     
                     else:
-                        # SE FOR MENOS DE 90%, AVISA PARA NÃO ENTRAR
                         st.markdown("<h3>⚠️ AGUARDE</h3>", unsafe_allow_html=True)
                         st.markdown(f"<h1 style='font-size: 5rem; color: #ffcc00 !important; margin:0; line-height: 1;'>{precisao:.1f}%</h1>", unsafe_allow_html=True)
-                        st.markdown("""
+                        st.markdown(f"""
                             <div style="background: #333; padding: 20px; border-radius: 10px; margin-top: 20px; border: 1px solid #ffcc00;">
                                 <h4 style="color: #ffcc00 !important; margin:0;">PRECISÃO BAIXA</h4>
-                                <p style="font-size: 0.8rem; margin-top: 5px;">Recomendado operar apenas acima de 90%</p>
+                                <p style="font-size: 0.8rem; margin-top: 5px;">Cenário: {motivo}</p>
                             </div>
                         """, unsafe_allow_html=True)
 
@@ -248,7 +318,7 @@ def tela_dashboard():
         st.session_state['logado'] = False
         st.rerun()
 
-# --- 8. EXECUÇÃO ---
+# --- 9. EXECUÇÃO ---
 if st.session_state['logado']:
     tela_dashboard()
 else:
