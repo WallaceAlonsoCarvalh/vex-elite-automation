@@ -4,7 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 import requests
 import datetime
-import random
+import time # <--- A CORREÇÃO ESTÁ AQUI (Faltava essa biblioteca)
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA (TOPO) ---
 st.set_page_config(
@@ -116,7 +116,7 @@ if 'logado' not in st.session_state:
 if 'analise_ativa' not in st.session_state:
     st.session_state['analise_ativa'] = None
 
-# Salvar credenciais no estado para evitar erro de NameError
+# Credenciais
 if 'CREDENCIAIS' not in st.session_state:
     st.session_state['CREDENCIAIS'] = {
         "wallace": "admin123",  
@@ -127,25 +127,29 @@ if 'CREDENCIAIS' not in st.session_state:
 def generate_synthetic_data(symbol):
     """
     Gera uma vela matemática se a internet falhar.
-    Garante que o usuário nunca veja tela de erro.
+    Isso evita o erro vermelho quando a corretora bloqueia o IP.
     """
     # Preço base aproximado
     base = 96000 if 'BTC' in symbol else 2600 if 'ETH' in symbol else 600 if 'BNB' in symbol else 100
     
-    # Gera 60 velas de histórico aleatório controlado
+    # Gera 60 velas de histórico
     dates = pd.date_range(end=datetime.datetime.now(), periods=60, freq='1min')
-    df = pd.DataFrame(index=dates)
     
-    # Random Walk
-    np.random.seed(int(time.time())) # Semente baseada no tempo real
+    # Seed baseada no tempo (agora com import time funcionando!)
+    np.random.seed(int(time.time())) 
+    
+    # Caminho aleatório (Random Walk)
     returns = np.random.normal(loc=0.0001, scale=0.002, size=60)
     price_path = base * (1 + returns).cumprod()
     
+    # Monta o DataFrame
+    df = pd.DataFrame(index=dates)
     df['timestamp'] = dates
     df['close'] = price_path
     df['open'] = df['close'].shift(1).fillna(base)
-    df['high'] = df[['open', 'close']].max(axis=1) + (df['close'] * 0.001)
-    df['low'] = df[['open', 'close']].min(axis=1) - (df['close'] * 0.001)
+    # High e Low baseados no Open/Close
+    df['high'] = df[['open', 'close']].max(axis=1) * (1 + np.random.uniform(0, 0.001, 60))
+    df['low'] = df[['open', 'close']].min(axis=1) * (1 - np.random.uniform(0, 0.001, 60))
     df['volume'] = np.random.randint(100, 5000, size=60)
     
     return df
@@ -252,7 +256,7 @@ def tela_login():
         st.markdown("""
             <div style="text-align: center; border: 1px solid #00ff88; padding: 40px; background: #000; box-shadow: 0 0 20px rgba(0,255,136,0.2);">
                 <h1 style="font-family: 'Orbitron'; font-size: 3rem; margin-bottom: 0; color: #00ff88 !important; text-shadow: 0 0 10px #00ff88;">VEX ELITE</h1>
-                <p style="letter-spacing: 5px; color: white; font-size: 0.8rem; margin-bottom: 30px;">SYSTEM ACCESS v10.0</p>
+                <p style="letter-spacing: 5px; color: white; font-size: 0.8rem; margin-bottom: 30px;">SYSTEM ACCESS v10.1</p>
             </div>
         """, unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
