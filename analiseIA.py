@@ -6,17 +6,16 @@ import numpy as np
 import plotly.graph_objects as go
 import requests
 
-# --- PROTEÇÃO CONTRA ERRO DE IMPORTAÇÃO (ANTI-CRASH) ---
-# Se o yfinance não estiver instalado, o sistema NÃO VAI CAIR.
+# --- PROTEÇÃO ANTI-CRASH ---
 try:
     import yfinance as yf
     YFINANCE_AVAILABLE = True
 except ImportError:
     YFINANCE_AVAILABLE = False
 
-# --- 1. CONFIGURAÇÃO DA PÁGINA ---
+# --- 1. CONFIGURAÇÃO ---
 st.set_page_config(
-    page_title="VEX ELITE | TERMINAL",
+    page_title="VEX ELITE | FLOW TERMINAL",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -27,7 +26,7 @@ USER_CREDENTIALS = {
     "cliente01": "pro2026", 
 }
 
-# --- 3. CSS (DESIGN CORRIGIDO: MENU E CORES) ---
+# --- 3. CSS (DESIGN MANTIDO) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap');
@@ -46,51 +45,36 @@ st.markdown("""
         font-family: 'Rajdhani', sans-serif;
     }
     
-    /* --- CORREÇÃO DO MENU DROPDOWN (PRETO E VERDE) --- */
-    /* A caixa fechada onde clica */
+    /* MENU CORRIGIDO */
     div[data-baseweb="select"] > div {
         background-color: #111116 !important;
         color: #00ff88 !important;
         border: 1px solid #333 !important;
     }
-    
-    /* A lista que abre (Popover) - Forçando fundo preto */
     div[data-baseweb="popover"] {
         background-color: #050505 !important;
         border: 1px solid #00ff88 !important;
     }
-    
-    /* Os itens da lista */
-    ul[data-testid="stSelectboxVirtualDropdown"] {
-        background-color: #050505 !important;
-    }
-    
-    li[role="option"] {
+    ul[role="listbox"] li {
         background-color: #050505 !important;
         color: white !important;
     }
-    
-    /* Quando passa o mouse (Hover) */
-    li[role="option"]:hover, li[role="option"][aria-selected="true"] {
+    ul[role="listbox"] li:hover {
         background-color: #00ff88 !important;
         color: black !important;
-        font-weight: bold;
     }
-    
-    /* Ícone Seta */
     .stSelectbox svg { fill: #00ff88 !important; }
     
-    /* --- INPUTS --- */
+    /* INPUTS */
     .stTextInput > div > div > input {
         background-color: #111 !important;
         color: #00ff88 !important;
         border: 1px solid #333 !important;
         border-radius: 8px;
         text-align: center;
-        letter-spacing: 2px;
     }
     
-    /* --- BOTÕES --- */
+    /* BOTÕES */
     .stButton > button {
         background: transparent !important;
         border: 1px solid #00ff88 !important;
@@ -110,13 +94,11 @@ st.markdown("""
         transform: scale(1.02);
     }
     
-    /* CARDS */
     .neon-card {
         background: rgba(255, 255, 255, 0.03);
         border: 1px solid rgba(255, 255, 255, 0.1);
         padding: 25px;
         border-radius: 10px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         backdrop-filter: blur(10px);
     }
     
@@ -141,50 +123,35 @@ if 'logado' not in st.session_state:
 if 'user_logged' not in st.session_state:
     st.session_state['user_logged'] = ""
 
-# --- 5. SISTEMA BLINDADO DE DADOS (COM MULTI-EXCHANGE) ---
+# --- 5. COLETOR DE DADOS BLINDADO ---
 def get_blindado_data(symbol):
     clean_symbol = symbol.replace("/", "").upper()
     yf_symbol = f"{symbol.split('/')[0]}-USD"
     
-    # 1. API BINANCE DIRETA (Mais rápida)
+    # 1. API BINANCE
     try:
         url = f"https://api.binance.com/api/v3/klines?symbol={clean_symbol}&interval=1m&limit=60"
-        # Cabeçalho de navegador para evitar bloqueio 403
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        
+        headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, timeout=3)
         if response.status_code == 200:
             data = response.json()
             if len(data) > 0:
-                df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
+                df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'time2', 'qav', 'nt', 'tbv', 'tqv', 'ignore'])
                 df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].astype(float)
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                 return df
-    except Exception:
-        pass # Falha silenciosa
+    except: pass
 
-    # 2. CCXT BINANCE (Backup Padrão)
+    # 2. CCXT
     try:
-        ex = ccxt.binance({'timeout': 3000, 'enableRateLimit': True})
+        ex = ccxt.binance()
         ohlcv = ex.fetch_ohlcv(symbol, timeframe='1m', limit=60)
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
-    except:
-        pass
+    except: pass
 
-    # 3. CCXT KUCOIN (Alternativa se Binance cair)
-    try:
-        ex = ccxt.kucoin({'timeout': 3000, 'enableRateLimit': True})
-        # Kucoin pode usar simbolos diferentes, tenta direto
-        ohlcv = ex.fetch_ohlcv(symbol, timeframe='1m', limit=60)
-        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-        return df
-    except:
-        pass
-
-    # 4. YAHOO FINANCE (Último recurso, só se instalado)
+    # 3. YFINANCE
     if YFINANCE_AVAILABLE:
         try:
             df = yf.download(yf_symbol, period="1d", interval="1m", progress=False)
@@ -194,13 +161,12 @@ def get_blindado_data(symbol):
                 if 'datetime' in df.columns: df = df.rename(columns={'datetime': 'timestamp'})
                 if 'date' in df.columns: df = df.rename(columns={'date': 'timestamp'})
                 return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
-        except:
-            pass
+        except: pass
 
     return None
 
-# --- 6. INTELIGÊNCIA VEX ATOMIC v6.1 (LÓGICA HFT MANTIDA) ---
-def analyze_atomic_pressure(df):
+# --- 6. INTELIGÊNCIA DE FLUXO (TREND FOLLOWER) ---
+def analyze_trend_flow(df):
     if df is None or df.empty:
         return "NEUTRO", 0.0, "AGUARDANDO DADOS..."
 
@@ -212,84 +178,76 @@ def analyze_atomic_pressure(df):
     # Vela Atual (Faltando 10s)
     c_now = close[-1]
     o_now = open_[-1]
-    h_now = high[-1]
-    l_now = low[-1]
     
+    # Dimensões
     body_size = abs(c_now - o_now)
-    upper_wick = h_now - max(c_now, o_now)
-    lower_wick = min(c_now, o_now) - l_now
-    total_size = h_now - l_now
+    total_size = high[-1] - low[-1]
     
-    # --- STOCHASTIC RSI ---
+    # Pavios (Rejeição - aqui queremos POUCO pavio a favor)
+    upper_wick = high[-1] - max(c_now, o_now)
+    lower_wick = min(c_now, o_now) - low[-1]
+    
+    # --- INDICADORES ---
+    # EMA 9 (Tendência Curta)
+    ema9 = pd.Series(close).ewm(span=9).mean().iloc[-1]
+    ema20 = pd.Series(close).ewm(span=20).mean().iloc[-1]
+    
+    # RSI (Força)
     rsi_period = 14
     delta = pd.Series(close).diff()
     gain = (delta.where(delta > 0, 0)).rolling(rsi_period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(rsi_period).mean()
     rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    rsi = rsi.fillna(50)
-    
-    min_rsi = rsi.rolling(window=14).min()
-    max_rsi = rsi.rolling(window=14).max()
-    denominator = max_rsi - min_rsi
-    denominator = denominator.replace(0, 1) 
-    stoch_rsi = (rsi - min_rsi) / denominator
-    k = stoch_rsi.rolling(window=3).mean().iloc[-1] * 100 
-    
-    # EMA9
-    ema9 = pd.Series(close).ewm(span=9).mean().iloc[-1]
+    rsi = 100 - (100 / (1 + rs)).iloc[-1]
     
     score = 0.0
     signal = "NEUTRO"
-    motive = "ANALISANDO..."
+    motive = "ANALISANDO FLUXO..."
 
-    # --- LÓGICA DE DECISÃO ---
-    
-    # 1. VENDA (REJEIÇÃO DE TOPO)
-    if k > 85:
-        if upper_wick > (body_size * 0.8): 
-            score = 98.5
-            signal = "VENDA"
-            motive = "ATOMIC: REJEIÇÃO EXTREMA DE TOPO"
-        elif c_now < o_now: 
-            score = 94.0
-            signal = "VENDA"
-            motive = "ATOMIC: VIRADA DE VELA (CORREÇÃO)"
+    # --- LÓGICA DE FLUXO (V7.0) ---
+    # Objetivo: Entrar A FAVOR da vela atual se ela mostrar força.
 
-    # 2. COMPRA (REJEIÇÃO DE FUNDO)
-    elif k < 15:
-        if lower_wick > (body_size * 0.8):
-            score = 98.5
-            signal = "COMPRA"
-            motive = "ATOMIC: REJEIÇÃO EXTREMA DE FUNDO"
-        elif c_now > o_now:
-            score = 94.0
-            signal = "COMPRA"
-            motive = "ATOMIC: VIRADA DE VELA (CORREÇÃO)"
+    # 1. COMPRA (CALL) - SEGUIR A ALTA
+    # Preço acima da média + Vela Verde Forte + RSI apontando pra cima
+    if c_now > ema9 and c_now > o_now:
+        # Verifica se o corpo é robusto (pelo menos 60% da vela)
+        if body_size > (total_size * 0.6):
+            # Se não tiver pavio superior grande (nada barrando a subida)
+            if upper_wick < (body_size * 0.3):
+                if rsi > 50 and rsi < 85: # Tem força e não está exausto
+                    score = 96.0
+                    signal = "COMPRA"
+                    motive = "FLUXO: VELA DE FORÇA COMPRADORA"
+                elif rsi >= 85: # Tendência muito forte (Euforia)
+                    score = 93.0
+                    signal = "COMPRA"
+                    motive = "FLUXO: MOMENTUM DE ALTA (RSI ESTOURADO)"
 
-    # 3. CONTINUIDADE
-    else:
-        if c_now > ema9 and c_now > o_now and upper_wick < (body_size * 0.3):
-             if k > 35 and k < 75:
-                score = 92.0
-                signal = "COMPRA"
-                motive = "FLUXO: IMPULSÃO DE ALTA LIMPA"
-        
-        elif c_now < ema9 and c_now < o_now and lower_wick < (body_size * 0.3):
-            if k > 25 and k < 65:
-                score = 92.0
-                signal = "VENDA"
-                motive = "FLUXO: IMPULSÃO DE BAIXA LIMPA"
+    # 2. VENDA (PUT) - SEGUIR A BAIXA
+    # Preço abaixo da média + Vela Vermelha Forte + RSI apontando pra baixo
+    elif c_now < ema9 and c_now < o_now:
+        # Verifica corpo robusto
+        if body_size > (total_size * 0.6):
+            # Se não tiver pavio inferior grande (nada barrando a descida)
+            if lower_wick < (body_size * 0.3):
+                if rsi < 50 and rsi > 15: # Tem força pra cair
+                    score = 96.0
+                    signal = "VENDA"
+                    motive = "FLUXO: VELA DE FORÇA VENDEDORA"
+                elif rsi <= 15: # Tendência muito forte (Desespero)
+                    score = 93.0
+                    signal = "VENDA"
+                    motive = "FLUXO: MOMENTUM DE BAIXA (RSI NO CHÃO)"
 
-    # TRAVA DE SEGURANÇA (DOJI)
-    if total_size == 0 or body_size < (total_size * 0.15):
-        score = 15.0
+    # TRAVA (DOJI / SEM FORÇA)
+    if total_size == 0 or body_size < (total_size * 0.3):
+        score = 20.0
         signal = "NEUTRO"
-        motive = "MERCADO TRAVADO (DOJI)"
+        motive = "MERCADO LENTO (SEM FLUXO)"
 
     return signal, score, motive
 
-# --- 7. TELA DE LOGIN ---
+# --- 7. LOGIN ---
 def tela_login():
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.2, 1])
@@ -297,7 +255,7 @@ def tela_login():
         st.markdown("""
             <div style="text-align: center; border: 1px solid #00ff88; padding: 40px; background: #000; box-shadow: 0 0 20px rgba(0,255,136,0.2);">
                 <h1 style="font-family: 'Orbitron'; font-size: 3rem; margin-bottom: 0; color: #00ff88 !important; text-shadow: 0 0 10px #00ff88;">VEX ELITE</h1>
-                <p style="letter-spacing: 5px; color: white; font-size: 0.8rem; margin-bottom: 30px;">SYSTEM ACCESS v6.1 (BLINDADO)</p>
+                <p style="letter-spacing: 5px; color: white; font-size: 0.8rem; margin-bottom: 30px;">FLOW TERMINAL v7.0</p>
             </div>
         """, unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
@@ -313,7 +271,7 @@ def tela_login():
             else:
                 st.error("ACESSO NEGADO.")
 
-# --- 8. TELA DASHBOARD ---
+# --- 8. DASHBOARD ---
 def tela_dashboard():
     st.markdown("""
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
@@ -333,15 +291,17 @@ def tela_dashboard():
         ativo = st.selectbox("", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"], label_visibility="collapsed")
     with c3:
         st.markdown("<h4 style='margin-bottom: 5px; color: #00ff88 !important;'>AÇÃO</h4>", unsafe_allow_html=True)
-        acionar = st.button("VARREDURA ATÔMICA")
+        # NOME DO BOTÃO MUDOU PARA REFLETIR A NOVA LÓGICA
+        acionar = st.button("ANALISAR FLUXO (M1)")
     st.markdown("</div>", unsafe_allow_html=True)
 
     if acionar:
-        with st.spinner(f"SINCRONIZANDO DADOS BLINDADOS DE {ativo}..."):
+        with st.spinner(f"CALCULANDO VETOR DE FORÇA ({ativo})..."):
             df = get_blindado_data(ativo)
             
             if df is not None:
-                sig, precisao, motivo = analyze_atomic_pressure(df)
+                # CHAMA A NOVA INTELIGÊNCIA DE FLUXO
+                sig, precisao, motivo = analyze_trend_flow(df)
                 
                 col_grafico, col_dados = st.columns([2.5, 1.5])
                 
@@ -355,7 +315,7 @@ def tela_dashboard():
                 
                 with col_dados:
                     st.markdown("<div class='neon-card' style='text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;'>", unsafe_allow_html=True)
-                    st.markdown("<p style='color: #aaa !important; font-size: 0.9rem;'>PROBABILIDADE INSTANTÂNEA</p>", unsafe_allow_html=True)
+                    st.markdown("<p style='color: #aaa !important; font-size: 0.9rem;'>FORÇA DA TENDÊNCIA</p>", unsafe_allow_html=True)
                     
                     cor_score = "#00ff88" if precisao >= 92 else "#ffcc00"
                     if precisao < 60: cor_score = "#ff0055"
@@ -372,22 +332,21 @@ def tela_dashboard():
                             </div>
                         """, unsafe_allow_html=True)
                         st.markdown(f"<div style='border: 1px solid #333; padding: 10px; margin-top: 10px;'><span style='color: #00ff88 !important;'>MOTIVO:</span> {motivo}</div>", unsafe_allow_html=True)
-                        st.markdown("<p style='margin-top: 15px; color: white !important; font-weight: bold; animation: pulse 1s infinite;'>ENTRE IMEDIATAMENTE</p>", unsafe_allow_html=True)
+                        st.markdown("<p style='margin-top: 15px; color: white !important; font-weight: bold; animation: pulse 1s infinite;'>SIGA O FLUXO</p>", unsafe_allow_html=True)
                     
                     else:
                         st.markdown("""
                             <div style="border: 2px solid #ff0055; padding: 15px; margin: 10px 0; color: #ff0055;">
-                                <h2 style="margin:0; color: #ff0055 !important;">NÃO ENTRAR</h2>
+                                <h2 style="margin:0; color: #ff0055 !important;">AGUARDE</h2>
                             </div>
                         """, unsafe_allow_html=True)
                         st.markdown(f"<p style='color: #aaa !important;'>Cenário: {motivo}</p>", unsafe_allow_html=True)
-                        st.markdown("<p style='font-size: 0.8rem; color: #ff0055 !important;'>AGUARDE UMA OPORTUNIDADE CLARA.</p>", unsafe_allow_html=True)
+                        st.markdown("<p style='font-size: 0.8rem; color: #ff0055 !important;'>SEM TENDÊNCIA CLARA.</p>", unsafe_allow_html=True)
                     
                     st.markdown(f"<div style='margin-top: auto; padding-top: 20px; font-size: 1.5rem;'>${df['close'].iloc[-1]:.2f}</div>", unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
             else:
-                # Agora com 3 tentativas, é quase impossível ver esta mensagem
-                st.error("ERRO DE REDE: Todas as conexões (Binance/Kucoin) falharam. Verifique sua internet.")
+                st.error("ERRO DE REDE: Falha ao obter dados.")
 
     st.markdown("<br><br><br>", unsafe_allow_html=True)
     if st.button("ENCERRAR SESSÃO"):
