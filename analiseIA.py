@@ -7,6 +7,7 @@ import datetime
 import time
 
 # --- 1. CONFIGURAÇÃO E CREDENCIAIS (TOPO ABSOLUTO) ---
+# Isso resolve o erro "NameError" do login
 st.set_page_config(
     page_title="VEX ELITE | FLOW TERMINAL",
     layout="wide",
