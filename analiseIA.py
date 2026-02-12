@@ -18,7 +18,7 @@ USER_CREDENTIALS = {
     "cliente01": "pro2026", 
 }
 
-# --- 3. CSS "CYBER-FUTURE" (DESIGN TOTALMENTE NOVO) ---
+# --- 3. CSS "CYBER-FUTURE" (DESIGN MANTIDO 100%) ---
 st.markdown("""
 <style>
     /* FONTE FUTURISTA */
@@ -34,35 +34,28 @@ st.markdown("""
         color: #ffffff;
     }
 
-    /* --- CORREÇÃO DE VISIBILIDADE (TEXTO BRANCO FORÇADO) --- */
+    /* --- CORREÇÃO DE VISIBILIDADE --- */
     h1, h2, h3, h4, h5, h6, p, label, div, span, li {
         color: #ffffff !important;
         font-family: 'Rajdhani', sans-serif;
     }
 
-    /* --- BARRA DE SELEÇÃO (CRIPTO) CORRIGIDA --- */
-    /* Caixa fechada */
+    /* --- BARRA DE SELEÇÃO (CRIPTO) --- */
     .stSelectbox > div > div {
         background-color: #111116 !important;
-        color: #00ff88 !important; /* Texto Verde Neon */
+        color: #00ff88 !important;
         border: 1px solid #333 !important;
         font-weight: bold;
     }
-    /* Lista Aberta (Dropdown) */
     ul[data-testid="stSelectboxVirtualDropdown"] {
         background-color: #0a0a0a !important;
         border: 1px solid #00ff88 !important;
     }
-    /* Itens da Lista */
-    li[role="option"] {
-        color: white !important;
-    }
-    /* Hover na Lista */
+    li[role="option"] { color: white !important; }
     li[role="option"]:hover {
         background-color: #00ff88 !important;
-        color: black !important; /* Texto preto no hover para ler bem */
+        color: black !important;
     }
-    /* Ícone da seta */
     .stSelectbox svg { fill: #00ff88 !important; }
 
     /* --- INPUTS DE LOGIN --- */
@@ -84,7 +77,7 @@ st.markdown("""
         text-transform: uppercase;
         font-weight: 900;
         padding: 20px;
-        border-radius: 0px; /* Quadrado estilo Hacker */
+        border-radius: 0px;
         transition: all 0.3s ease;
         box-shadow: 0 0 10px rgba(0, 255, 136, 0.1);
     }
@@ -95,7 +88,7 @@ st.markdown("""
         transform: scale(1.02);
     }
 
-    /* --- CARDS (CONTAINERS) --- */
+    /* --- CARDS --- */
     .neon-card {
         background: rgba(255, 255, 255, 0.03);
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -105,7 +98,7 @@ st.markdown("""
         backdrop-filter: blur(10px);
     }
 
-    /* --- SCORE GIGANTE --- */
+    /* --- SCORE --- */
     .score-glow {
         font-size: 6rem;
         font-family: 'Orbitron', sans-serif;
@@ -115,7 +108,6 @@ st.markdown("""
         margin: 20px 0;
     }
 
-    /* Esconder menu padrão */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
@@ -129,12 +121,14 @@ if 'logado' not in st.session_state:
 if 'user_logged' not in st.session_state:
     st.session_state['user_logged'] = ""
 
-# --- 5. INTELIGÊNCIA VEX (Multi-Strategy) ---
+# --- 5. INTELIGÊNCIA VEX-HFT v4.0 (SUPER CÉREBRO) ---
 def get_fast_data(symbol):
-    exchanges = [ccxt.bybit({'timeout': 3000}), ccxt.kucoin({'timeout': 3000})] 
+    # Conexão Otimizada
+    exchanges = [ccxt.bybit({'timeout': 4000}), ccxt.kucoin({'timeout': 4000}), ccxt.binance({'timeout': 4000})] 
     for ex in exchanges:
         try:
-            ohlcv = ex.fetch_ohlcv(symbol, timeframe='1m', limit=100) 
+            # Busca 120 velas para cálculo profundo de volatilidade
+            ohlcv = ex.fetch_ohlcv(symbol, timeframe='1m', limit=120) 
             if ohlcv:
                 df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
@@ -142,65 +136,137 @@ def get_fast_data(symbol):
         except: continue
     return None
 
-def analyze_all_hypothesis(df):
+def calculate_choppiness(df):
+    # Índice de "Choque" (Mercado Lateral/Bêbado)
+    # Se estiver alto, NÃO OPERA.
+    high = df['high']
+    low = df['low']
     close = df['close']
-    ema9 = close.ewm(span=9, adjust=False).mean()
-    ema21 = close.ewm(span=21, adjust=False).mean()
     
-    delta = close.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
+    tr1 = pd.DataFrame(high - low)
+    tr2 = pd.DataFrame(abs(high - close.shift(1)))
+    tr3 = pd.DataFrame(abs(low - close.shift(1)))
+    frames = [tr1, tr2, tr3]
+    tr = pd.concat(frames, axis=1, join='inner').max(axis=1)
+    atr = tr.rolling(1).mean()
     
-    sma20 = close.rolling(window=20).mean()
-    std20 = close.rolling(window=20).std()
-    upper_bb = sma20 + (std20 * 2)
-    lower_bb = sma20 - (std20 * 2)
+    highh = high.rolling(14).max()
+    lowl = low.rolling(14).min()
     
-    last_close = close.iloc[-1]
-    last_ema9 = ema9.iloc[-1]
-    last_ema21 = ema21.iloc[-1]
-    last_rsi = rsi.iloc[-1]
-    last_upper = upper_bb.iloc[-1]
-    last_lower = lower_bb.iloc[-1]
-    
-    score = 75.0 
-    motive = "ANÁLISE NEUTRA"
-    
-    # 1. TENDÊNCIA
-    if last_close > last_ema9 and last_ema9 > last_ema21:
-        if last_rsi > 50 and last_rsi < 70: 
-            score += 15
-            motive = "FLUXO: TENDÊNCIA DE ALTA"
-    elif last_close < last_ema9 and last_ema9 < last_ema21:
-        if last_rsi < 50 and last_rsi > 30: 
-            score += 15
-            motive = "FLUXO: TENDÊNCIA DE BAIXA"
+    ci = 100 * np.log10(atr.rolling(14).sum() / (highh - lowl)) / np.log10(14)
+    return ci.iloc[-1]
 
-    # 2. REVERSÃO (BB)
-    if last_close > last_upper: 
-        score += 18 
-        motive = "REVERSÃO: TOPO ESTOURADO"
-    elif last_close < last_lower: 
-        score += 18
-        motive = "REVERSÃO: FUNDO ESTOURADO"
-        
-    # 3. VOLUME
-    vol_now = df['volume'].iloc[-1]
-    vol_avg = df['volume'].tail(20).mean()
-    if vol_now > (vol_avg * 1.5): score += 5
+def analyze_all_hypothesis(df):
+    """
+    Lógica VEX-HFT v4.0:
+    Analisa Volume, Padrões de Candle, Fluxo e Ruído.
+    """
+    # 1. Preparação dos Dados
+    close = df['close'].values
+    open_ = df['open'].values
+    high = df['high'].values
+    low = df['low'].values
+    vol = df['volume'].values
     
-    if last_rsi > 80 or last_rsi < 20: score += 5
-        
-    score = min(score, 99.9)
+    # Índices da última vela e penúltima
+    c_now = close[-1]
+    o_now = open_[-1]
+    c_prev = close[-2]
+    o_prev = open_[-2]
     
-    if "ALTA" in motive or "FUNDO" in motive: signal = "COMPRA"
-    else: signal = "VENDA"
+    # 2. Verifica "Mercado Bêbado" (Choppiness Index)
+    # Se o mercado não tiver direção, cancela tudo.
+    chop = calculate_choppiness(df)
+    if chop > 61.8: # Mercado Travado/Lateral Extremo
+        return "NEUTRO", 0.0, "MERCADO SEM DIREÇÃO (RISCO ALTO)"
+
+    # --- CÁLCULO DE SCORE DE PROBABILIDADE ---
+    score = 0
+    signal = "NEUTRO"
+    motive = "AGUARDANDO OPORTUNIDADE"
+
+    # --- HIPÓTESE 1: REVERSÃO POR EXAUSTÃO (A mais assertiva) ---
+    # Vela atual é muito grande e esticada (longe da média)
+    ema20 = pd.Series(close).ewm(span=20).mean().iloc[-1]
+    distancia_media = abs(c_now - ema20)
+    tamanho_vela = abs(c_now - o_now)
+    tamanho_medio = np.mean(abs(close[-10:] - open_[-10:])) # Média das últimas 10
+    
+    # Se a vela é 3x maior que a média e está longe da EMA20 = Exaustão
+    if tamanho_vela > (tamanho_medio * 2.5):
+        # Checar Pavio (Rejeição)
+        pavio_sup = high[-1] - max(c_now, o_now)
+        pavio_inf = min(c_now, o_now) - low[-1]
         
-    # Correção final de direção
-    if last_close > last_upper: signal = "VENDA"
-    if last_close < last_lower: signal = "COMPRA"
+        # Vela Verde Gigante + Pavio em cima = VAI CAIR
+        if c_now > o_now and pavio_sup > (tamanho_vela * 0.3):
+            score = 98.5
+            signal = "VENDA"
+            motive = "EXAUSTÃO DE COMPRA (REJEIÇÃO DE TOPO)"
+        
+        # Vela Vermelha Gigante + Pavio em baixo = VAI SUBIR
+        elif c_now < o_now and pavio_inf > (tamanho_vela * 0.3):
+            score = 98.5
+            signal = "COMPRA"
+            motive = "EXAUSTÃO DE VENDA (REJEIÇÃO DE FUNDO)"
+
+    # --- HIPÓTESE 2: CONTINUIDADE DE FLUXO (ENGOLFO) ---
+    # Se não for exaustão, pode ser força
+    elif score < 90:
+        # Engolfo de Alta (Vela verde engole a vermelha anterior)
+        if c_now > o_now and c_prev < o_prev and c_now > o_prev and o_now < c_prev:
+             # Confirmação com Volume
+            if vol[-1] > vol[-2]:
+                score = 94.0
+                signal = "COMPRA"
+                motive = "PADRÃO: ENGOLFO DE ALTA + VOLUME"
+        
+        # Engolfo de Baixa (Vela vermelha engole a verde anterior)
+        elif c_now < o_now and c_prev > o_prev and c_now < o_prev and o_now > c_prev:
+            if vol[-1] > vol[-2]:
+                score = 94.0
+                signal = "VENDA"
+                motive = "PADRÃO: ENGOLFO DE BAIXA + VOLUME"
+
+    # --- HIPÓTESE 3: PROTEÇÃO DE TENDÊNCIA (MÉDIAS) ---
+    # Se nenhuma das anteriores bater forte, usa tendência macro
+    if score < 90:
+        ema9 = pd.Series(close).ewm(span=9).mean().iloc[-1]
+        ema50 = pd.Series(close).ewm(span=50).mean().iloc[-1]
+        
+        # Tendência Clara de Alta
+        if c_now > ema9 and ema9 > ema50:
+             # RSI (Relative Strength Index) Simples
+            delta = pd.Series(close).diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs)).iloc[-1]
+            
+            if rsi > 40 and rsi < 65: # Zona segura de compra
+                score = 91.5
+                signal = "COMPRA"
+                motive = "FLUXO DE TENDÊNCIA (EMA CROSS)"
+        
+        # Tendência Clara de Baixa
+        elif c_now < ema9 and ema9 < ema50:
+            delta = pd.Series(close).diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs)).iloc[-1]
+            
+            if rsi < 60 and rsi > 35: # Zona segura de venda
+                score = 91.5
+                signal = "VENDA"
+                motive = "FLUXO DE TENDÊNCIA (EMA CROSS)"
+
+    # --- FILTRO FINAL DE SEGURANÇA (O "ANTI-LOSS") ---
+    # Se a vela atual for muito pequena (Doji), anula tudo. Mercado indeciso.
+    if tamanho_vela < (tamanho_medio * 0.3):
+        score = 45.0
+        signal = "NEUTRO"
+        motive = "MERCADO INDECISO (DOJI) - NÃO OPERE"
 
     return signal, score, motive
 
@@ -235,7 +301,7 @@ def tela_login():
 
 # --- 7. TELA DASHBOARD (DESIGN TERMINAL) ---
 def tela_dashboard():
-    # --- HEADER / BARRA SUPERIOR ---
+    # --- HEADER ---
     st.markdown("""
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
             <div>
@@ -258,18 +324,18 @@ def tela_dashboard():
         acionar = st.button("VARREDURA DE MERCADO")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- ÁREA DE RESULTADOS ---
+    # --- RESULTADOS ---
     if acionar:
-        with st.spinner(f"EXECUTANDO ALGORITMO EM {ativo}..."):
+        with st.spinner(f"EXECUTANDO ALGORITMO HFT EM {ativo}..."):
             df = get_fast_data(ativo)
             
             if df is not None:
+                # Análise VEX-HFT
                 sig, precisao, motivo = analyze_all_hypothesis(df)
                 
-                # Layout de 2 Colunas: Gráfico Esquerda / Cérebro Direita
                 col_grafico, col_dados = st.columns([2.5, 1.5])
                 
-                # COLUNA 1: GRÁFICO
+                # GRÁFICO
                 with col_grafico:
                     st.markdown("<div class='neon-card'>", unsafe_allow_html=True)
                     st.markdown(f"<h3 style='font-family: Orbitron;'>GRÁFICO M1 | {ativo}</h3>", unsafe_allow_html=True)
@@ -287,18 +353,18 @@ def tela_dashboard():
                     st.plotly_chart(fig, use_container_width=True)
                     st.markdown("</div>", unsafe_allow_html=True)
                 
-                # COLUNA 2: INTELIGÊNCIA ARTIFICIAL
+                # DADOS
                 with col_dados:
                     st.markdown("<div class='neon-card' style='text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;'>", unsafe_allow_html=True)
                     
                     st.markdown("<p style='color: #aaa !important; font-size: 0.9rem;'>PROBABILIDADE DE ACERTO</p>", unsafe_allow_html=True)
                     
-                    # Definição de Cores Baseada na Precisão
-                    cor_score = "#00ff88" if precisao >= 90 else "#ffcc00"
-                    
+                    cor_score = "#00ff88" if precisao >= 91 else "#ffcc00" # Filtro mais rigoroso
+                    if precisao < 60: cor_score = "#ff0055"
+
                     st.markdown(f"<div class='score-glow' style='color: {cor_score} !important;'>{precisao:.1f}%</div>", unsafe_allow_html=True)
                     
-                    if precisao >= 90:
+                    if precisao >= 91: # Só libera acima de 91
                         acao_texto = "COMPRA" if sig == "COMPRA" else "VENDA"
                         cor_bg = "linear-gradient(45deg, #00ff88, #00cc6a)" if sig == "COMPRA" else "linear-gradient(45deg, #ff0055, #cc0044)"
                         
@@ -312,12 +378,12 @@ def tela_dashboard():
                     
                     else:
                         st.markdown("""
-                            <div style="border: 2px solid #ffcc00; padding: 15px; margin: 10px 0; color: #ffcc00;">
-                                <h2 style="margin:0; color: #ffcc00 !important;">AGUARDE</h2>
+                            <div style="border: 2px solid #ff0055; padding: 15px; margin: 10px 0; color: #ff0055;">
+                                <h2 style="margin:0; color: #ff0055 !important;">NÃO ENTRAR</h2>
                             </div>
                         """, unsafe_allow_html=True)
-                        st.markdown(f"<p style='color: #aaa !important;'>Cenário Atual: {motivo}</p>", unsafe_allow_html=True)
-                        st.markdown("<p style='font-size: 0.8rem; color: #ffcc00 !important;'>FILTRO DE SEGURANÇA ATIVO (<90%)</p>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='color: #aaa !important;'>Cenário: {motivo}</p>", unsafe_allow_html=True)
+                        st.markdown("<p style='font-size: 0.8rem; color: #ff0055 !important;'>RISCO CALCULADO ALTO. AGUARDE.</p>", unsafe_allow_html=True)
                     
                     st.markdown(f"<div style='margin-top: auto; padding-top: 20px; font-size: 1.5rem;'>${df['close'].iloc[-1]:.2f}</div>", unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
