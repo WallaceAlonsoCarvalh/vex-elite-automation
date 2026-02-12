@@ -7,12 +7,12 @@ import plotly.graph_objects as go
 import requests
 
 # --- PROTEÇÃO CONTRA ERRO DE IMPORTAÇÃO (ANTI-CRASH) ---
+# Se o yfinance não estiver instalado, o sistema NÃO VAI CAIR.
 try:
     import yfinance as yf
     YFINANCE_AVAILABLE = True
 except ImportError:
     YFINANCE_AVAILABLE = False
-    # O sistema continuará rodando mesmo sem yfinance, usando apenas Binance/CCXT
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -47,27 +47,31 @@ st.markdown("""
     }
     
     /* --- CORREÇÃO DO MENU DROPDOWN (PRETO E VERDE) --- */
-    /* Caixa fechada */
+    /* A caixa fechada onde clica */
     div[data-baseweb="select"] > div {
         background-color: #111116 !important;
         color: #00ff88 !important;
         border: 1px solid #333 !important;
     }
     
-    /* Lista Aberta (Popover) */
+    /* A lista que abre (Popover) - Forçando fundo preto */
     div[data-baseweb="popover"] {
         background-color: #050505 !important;
         border: 1px solid #00ff88 !important;
     }
     
-    /* Itens da lista */
-    ul[role="listbox"] li {
+    /* Os itens da lista */
+    ul[data-testid="stSelectboxVirtualDropdown"] {
+        background-color: #050505 !important;
+    }
+    
+    li[role="option"] {
         background-color: #050505 !important;
         color: white !important;
     }
     
-    /* Hover (Mouse em cima) */
-    ul[role="listbox"] li[aria-selected="true"], ul[role="listbox"] li:hover {
+    /* Quando passa o mouse (Hover) */
+    li[role="option"]:hover, li[role="option"][aria-selected="true"] {
         background-color: #00ff88 !important;
         color: black !important;
         font-weight: bold;
@@ -137,15 +141,15 @@ if 'logado' not in st.session_state:
 if 'user_logged' not in st.session_state:
     st.session_state['user_logged'] = ""
 
-# --- 5. SISTEMA BLINDADO DE DADOS (COM TRATAMENTO DE ERRO) ---
+# --- 5. SISTEMA BLINDADO DE DADOS (COM MULTI-EXCHANGE) ---
 def get_blindado_data(symbol):
     clean_symbol = symbol.replace("/", "").upper()
     yf_symbol = f"{symbol.split('/')[0]}-USD"
     
-    # 1. API BINANCE DIRETA (Mais rápida e estável)
+    # 1. API BINANCE DIRETA (Mais rápida)
     try:
         url = f"https://api.binance.com/api/v3/klines?symbol={clean_symbol}&interval=1m&limit=60"
-        # User-Agent de navegador real para evitar bloqueio 403
+        # Cabeçalho de navegador para evitar bloqueio 403
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         
         response = requests.get(url, headers=headers, timeout=3)
@@ -156,12 +160,12 @@ def get_blindado_data(symbol):
                 df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].astype(float)
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                 return df
-    except Exception as e:
-        pass # Falha silenciosa, tenta próximo método
+    except Exception:
+        pass # Falha silenciosa
 
-    # 2. CCXT (Backup)
+    # 2. CCXT BINANCE (Backup Padrão)
     try:
-        ex = ccxt.binance()
+        ex = ccxt.binance({'timeout': 3000, 'enableRateLimit': True})
         ohlcv = ex.fetch_ohlcv(symbol, timeframe='1m', limit=60)
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
@@ -169,7 +173,18 @@ def get_blindado_data(symbol):
     except:
         pass
 
-    # 3. YAHOO FINANCE (Só roda se estiver instalado e os outros falharem)
+    # 3. CCXT KUCOIN (Alternativa se Binance cair)
+    try:
+        ex = ccxt.kucoin({'timeout': 3000, 'enableRateLimit': True})
+        # Kucoin pode usar simbolos diferentes, tenta direto
+        ohlcv = ex.fetch_ohlcv(symbol, timeframe='1m', limit=60)
+        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        return df
+    except:
+        pass
+
+    # 4. YAHOO FINANCE (Último recurso, só se instalado)
     if YFINANCE_AVAILABLE:
         try:
             df = yf.download(yf_symbol, period="1d", interval="1m", progress=False)
@@ -184,7 +199,7 @@ def get_blindado_data(symbol):
 
     return None
 
-# --- 6. INTELIGÊNCIA VEX ATOMIC v6.1 (PRECISÃO HFT) ---
+# --- 6. INTELIGÊNCIA VEX ATOMIC v6.1 (LÓGICA HFT MANTIDA) ---
 def analyze_atomic_pressure(df):
     if df is None or df.empty:
         return "NEUTRO", 0.0, "AGUARDANDO DADOS..."
@@ -205,7 +220,7 @@ def analyze_atomic_pressure(df):
     lower_wick = min(c_now, o_now) - l_now
     total_size = h_now - l_now
     
-    # --- STOCHASTIC RSI (Indicador Chave) ---
+    # --- STOCHASTIC RSI ---
     rsi_period = 14
     delta = pd.Series(close).diff()
     gain = (delta.where(delta > 0, 0)).rolling(rsi_period).mean()
@@ -282,7 +297,7 @@ def tela_login():
         st.markdown("""
             <div style="text-align: center; border: 1px solid #00ff88; padding: 40px; background: #000; box-shadow: 0 0 20px rgba(0,255,136,0.2);">
                 <h1 style="font-family: 'Orbitron'; font-size: 3rem; margin-bottom: 0; color: #00ff88 !important; text-shadow: 0 0 10px #00ff88;">VEX ELITE</h1>
-                <p style="letter-spacing: 5px; color: white; font-size: 0.8rem; margin-bottom: 30px;">SYSTEM ACCESS v6.1 (PATCHED)</p>
+                <p style="letter-spacing: 5px; color: white; font-size: 0.8rem; margin-bottom: 30px;">SYSTEM ACCESS v6.1 (BLINDADO)</p>
             </div>
         """, unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
@@ -322,7 +337,7 @@ def tela_dashboard():
     st.markdown("</div>", unsafe_allow_html=True)
 
     if acionar:
-        with st.spinner(f"ACESSANDO SATÉLITES DE DADOS ({ativo})..."):
+        with st.spinner(f"SINCRONIZANDO DADOS BLINDADOS DE {ativo}..."):
             df = get_blindado_data(ativo)
             
             if df is not None:
@@ -371,8 +386,8 @@ def tela_dashboard():
                     st.markdown(f"<div style='margin-top: auto; padding-top: 20px; font-size: 1.5rem;'>${df['close'].iloc[-1]:.2f}</div>", unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
             else:
-                # Se cair aqui, é porque TODOS os 3 métodos falharam (internet caiu total)
-                st.error("FALHA CRÍTICA DE REDE: Verifique sua conexão com a internet.")
+                # Agora com 3 tentativas, é quase impossível ver esta mensagem
+                st.error("ERRO DE REDE: Todas as conexões (Binance/Kucoin) falharam. Verifique sua internet.")
 
     st.markdown("<br><br><br>", unsafe_allow_html=True)
     if st.button("ENCERRAR SESSÃO"):
