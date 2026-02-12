@@ -169,4 +169,210 @@ def get_blindado_data(symbol):
             if not df.empty:
                 df = df.reset_index()
                 df.columns = df.columns.str.lower()
-                if 'datetime' in df.columns: df = df.rename(columns
+                if 'datetime' in df.columns: df = df.rename(columns={'datetime': 'timestamp'})
+                if 'date' in df.columns: df = df.rename(columns={'date': 'timestamp'})
+                return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+        except: pass
+
+    return None
+
+# --- 6. INTELIGÊNCIA VEX ATOMIC v6.0 (CORREÇÃO DE PRECISÃO) ---
+def analyze_atomic_pressure(df):
+    if df is None or df.empty:
+        return "NEUTRO", 0.0, "AGUARDANDO DADOS..."
+
+    close = df['close'].values
+    open_ = df['open'].values
+    high = df['high'].values
+    low = df['low'].values
+    
+    c_now = close[-1]
+    o_now = open_[-1]
+    h_now = high[-1]
+    l_now = low[-1]
+    
+    body_size = abs(c_now - o_now)
+    upper_wick = h_now - max(c_now, o_now)
+    lower_wick = min(c_now, o_now) - l_now
+    total_size = h_now - l_now
+    
+    # --- STOCHASTIC RSI (O Segredo da Precisão) ---
+    rsi_period = 14
+    delta = pd.Series(close).diff()
+    gain = (delta.where(delta > 0, 0)).rolling(rsi_period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(rsi_period).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    rsi = rsi.fillna(50)
+    
+    min_rsi = rsi.rolling(window=14).min()
+    max_rsi = rsi.rolling(window=14).max()
+    denominator = max_rsi - min_rsi
+    denominator = denominator.replace(0, 1) 
+    stoch_rsi = (rsi - min_rsi) / denominator
+    k = stoch_rsi.rolling(window=3).mean().iloc[-1] * 100 
+    
+    # Média Móvel para identificar tendência macro
+    ema9 = pd.Series(close).ewm(span=9).mean().iloc[-1]
+    
+    score = 0.0
+    signal = "NEUTRO"
+    motive = "ANALISANDO..."
+
+    # --- LÓGICA ATOMIC ---
+    
+    # 1. VENDA (PUT): Se esticou demais e deixou pavio em cima
+    if k > 85:
+        if upper_wick > (body_size * 0.8): # Pavio quase do tamanho do corpo = Rejeição Forte
+            score = 98.5
+            signal = "VENDA"
+            motive = "ATOMIC: EXAUSTÃO MÁXIMA (PAVIO SUPERIOR)"
+        elif c_now < o_now: # Já virou vermelha
+            score = 94.0
+            signal = "VENDA"
+            motive = "ATOMIC: VIRADA DE VELA (CORREÇÃO)"
+
+    # 2. COMPRA (CALL): Se caiu demais e deixou pavio embaixo
+    elif k < 15:
+        if lower_wick > (body_size * 0.8): # Pavio quase do tamanho do corpo = Rejeição Forte
+            score = 98.5
+            signal = "COMPRA"
+            motive = "ATOMIC: EXAUSTÃO MÁXIMA (PAVIO INFERIOR)"
+        elif c_now > o_now: # Já virou verde
+            score = 94.0
+            signal = "COMPRA"
+            motive = "ATOMIC: VIRADA DE VELA (CORREÇÃO)"
+
+    # 3. CONTINUIDADE (Só entra se o RSI não estiver extremo)
+    else:
+        # Tendência de Alta
+        if c_now > ema9 and c_now > o_now and upper_wick < (body_size * 0.3):
+             if k > 35 and k < 75: # Tem "gordura" pra queimar
+                score = 92.0
+                signal = "COMPRA"
+                motive = "FLUXO: IMPULSÃO DE ALTA LIMPA"
+        
+        # Tendência de Baixa
+        elif c_now < ema9 and c_now < o_now and lower_wick < (body_size * 0.3):
+            if k > 25 and k < 65: # Tem espaço pra cair
+                score = 92.0
+                signal = "VENDA"
+                motive = "FLUXO: IMPULSÃO DE BAIXA LIMPA"
+
+    # TRAVA DE SEGURANÇA (DOJI)
+    if total_size == 0 or body_size < (total_size * 0.15):
+        score = 15.0
+        signal = "NEUTRO"
+        motive = "MERCADO TRAVADO (DOJI) - PERIGO"
+
+    return signal, score, motive
+
+# --- 7. TELA DE LOGIN ---
+def tela_login():
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1.2, 1])
+    with col2:
+        st.markdown("""
+            <div style="text-align: center; border: 1px solid #00ff88; padding: 40px; background: #000; box-shadow: 0 0 20px rgba(0,255,136,0.2);">
+                <h1 style="font-family: 'Orbitron'; font-size: 3rem; margin-bottom: 0; color: #00ff88 !important; text-shadow: 0 0 10px #00ff88;">VEX ELITE</h1>
+                <p style="letter-spacing: 5px; color: white; font-size: 0.8rem; margin-bottom: 30px;">SYSTEM ACCESS v6.0</p>
+            </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        usuario = st.text_input("ID", placeholder="IDENTIFICAÇÃO", label_visibility="collapsed")
+        st.markdown("<div style='height: 10px'></div>", unsafe_allow_html=True)
+        senha = st.text_input("KEY", type="password", placeholder="CHAVE DE ACESSO", label_visibility="collapsed")
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("INICIAR PROTOCOLO"):
+            if usuario in USER_CREDENTIALS and senha == USER_CREDENTIALS[usuario]:
+                st.session_state['logado'] = True
+                st.session_state['user_logged'] = usuario
+                st.rerun()
+            else:
+                st.error("ACESSO NEGADO.")
+
+# --- 8. TELA DASHBOARD ---
+def tela_dashboard():
+    st.markdown("""
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
+            <div>
+                <span style="font-family: 'Orbitron'; font-size: 1.5rem; color: #00ff88 !important;">VEX ELITE</span>
+                <span style="background: #00ff88; color: black !important; padding: 2px 8px; font-weight: bold; font-size: 0.7rem; margin-left: 10px;">ONLINE</span>
+            </div>
+            <div style="text-align: right;">
+                <span style="color: #aaa !important; font-size: 0.9rem;">OPERADOR:</span>
+    """, unsafe_allow_html=True)
+    st.markdown(f"<span style='font-family: Orbitron; font-size: 1.2rem; color: white !important;'>{st.session_state['user_logged'].upper()}</span></div>", unsafe_allow_html=True)
+    
+    st.markdown("<div class='neon-card' style='margin-bottom: 20px;'>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([2, 1, 2])
+    with c1:
+        st.markdown("<h4 style='margin-bottom: 5px; color: #00ff88 !important;'>ATIVO ALVO</h4>", unsafe_allow_html=True)
+        ativo = st.selectbox("", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"], label_visibility="collapsed")
+    with c3:
+        st.markdown("<h4 style='margin-bottom: 5px; color: #00ff88 !important;'>AÇÃO</h4>", unsafe_allow_html=True)
+        acionar = st.button("VARREDURA ATÔMICA")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if acionar:
+        with st.spinner(f"SINCRONIZANDO DADOS BLINDADOS DE {ativo}..."):
+            df = get_blindado_data(ativo)
+            
+            if df is not None:
+                sig, precisao, motivo = analyze_atomic_pressure(df)
+                
+                col_grafico, col_dados = st.columns([2.5, 1.5])
+                
+                with col_grafico:
+                    st.markdown("<div class='neon-card'>", unsafe_allow_html=True)
+                    st.markdown(f"<h3 style='font-family: Orbitron;'>GRÁFICO M1 | {ativo}</h3>", unsafe_allow_html=True)
+                    fig = go.Figure(data=[go.Candlestick(x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'], increasing_line_color='#00ff88', decreasing_line_color='#ff0055')])
+                    fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=30, b=10), font=dict(family="Rajdhani", color="white"))
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
+                
+                with col_dados:
+                    st.markdown("<div class='neon-card' style='text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;'>", unsafe_allow_html=True)
+                    st.markdown("<p style='color: #aaa !important; font-size: 0.9rem;'>PROBABILIDADE INSTANTÂNEA</p>", unsafe_allow_html=True)
+                    
+                    cor_score = "#00ff88" if precisao >= 92 else "#ffcc00"
+                    if precisao < 60: cor_score = "#ff0055"
+
+                    st.markdown(f"<div class='score-glow' style='color: {cor_score} !important;'>{precisao:.1f}%</div>", unsafe_allow_html=True)
+                    
+                    if precisao >= 92: 
+                        acao_texto = "COMPRA" if sig == "COMPRA" else "VENDA"
+                        cor_bg = "linear-gradient(45deg, #00ff88, #00cc6a)" if sig == "COMPRA" else "linear-gradient(45deg, #ff0055, #cc0044)"
+                        
+                        st.markdown(f"""
+                            <div style="background: {cor_bg}; padding: 15px; border-radius: 5px; margin: 10px 0; box-shadow: 0 0 20px {cor_score};">
+                                <h1 style="margin:0; font-size: 2.5rem; color: black !important; font-weight: 900;">{acao_texto}</h1>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        st.markdown(f"<div style='border: 1px solid #333; padding: 10px; margin-top: 10px;'><span style='color: #00ff88 !important;'>MOTIVO:</span> {motivo}</div>", unsafe_allow_html=True)
+                        st.markdown("<p style='margin-top: 15px; color: white !important; font-weight: bold; animation: pulse 1s infinite;'>ENTRE IMEDIATAMENTE</p>", unsafe_allow_html=True)
+                    
+                    else:
+                        st.markdown("""
+                            <div style="border: 2px solid #ff0055; padding: 15px; margin: 10px 0; color: #ff0055;">
+                                <h2 style="margin:0; color: #ff0055 !important;">NÃO ENTRAR</h2>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        st.markdown(f"<p style='color: #aaa !important;'>Cenário: {motivo}</p>", unsafe_allow_html=True)
+                        st.markdown("<p style='font-size: 0.8rem; color: #ff0055 !important;'>AGUARDE UMA OPORTUNIDADE CLARA.</p>", unsafe_allow_html=True)
+                    
+                    st.markdown(f"<div style='margin-top: auto; padding-top: 20px; font-size: 1.5rem;'>${df['close'].iloc[-1]:.2f}</div>", unsafe_allow_html=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
+            else:
+                st.error("FALHA DE REDE: O servidor da Exchange não respondeu. Tente novamente em 5 segundos.")
+
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    if st.button("ENCERRAR SESSÃO"):
+        st.session_state['logado'] = False
+        st.rerun()
+
+# --- 8. EXECUÇÃO ---
+if st.session_state['logado']:
+    tela_dashboard()
+else:
+    tela_login()
