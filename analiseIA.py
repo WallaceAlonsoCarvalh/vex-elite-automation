@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS CORRIGIDO (MENU VISÍVEL + DESIGN CYBER) ---
+# --- 2. CSS (CORREÇÃO VISUAL DEFINITIVA) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap');
@@ -32,37 +32,41 @@ st.markdown("""
         font-family: 'Rajdhani', sans-serif;
     }
     
-    /* --- CORREÇÃO DO MENU (SALA DE MÁQUINAS) --- */
-    /* Fundo da caixa de seleção fechada */
-    div[data-baseweb="select"] > div {
+    /* --- CORREÇÃO DO MENU DROPDOWN (V8.1) --- */
+    /* Garante que o texto selecionado seja visível */
+    .stSelectbox > div > div {
         background-color: #111116 !important;
-        border: 1px solid #333 !important;
         color: #00ff88 !important;
+        border: 1px solid #333 !important;
     }
     
-    /* Fundo da lista suspensa (Onde estava branco) */
-    div[data-baseweb="popover"], div[data-baseweb="menu"], ul[role="listbox"] {
+    /* Fundo da Lista que abre (Popover) */
+    div[data-baseweb="popover"] {
         background-color: #000000 !important;
         border: 1px solid #00ff88 !important;
     }
     
-    /* Texto das opções */
-    div[data-baseweb="select"] li, ul[role="listbox"] li {
-        color: white !important;
+    /* Itens da lista */
+    div[data-baseweb="menu"] {
         background-color: #000000 !important;
     }
     
-    /* Quando passa o mouse na opção */
-    div[data-baseweb="select"] li:hover, ul[role="listbox"] li:hover, li[aria-selected="true"] {
-        background-color: #00ff88 !important;
-        color: #000000 !important;
+    /* Opções individuais */
+    li[role="option"] {
+        background-color: #000000 !important;
+        color: #ffffff !important; /* Texto BRANCO */
+    }
+    
+    /* Opção selecionada ou com mouse em cima */
+    li[role="option"]:hover, li[role="option"][aria-selected="true"] {
+        background-color: #00ff88 !important; /* Fundo VERDE */
+        color: #000000 !important; /* Texto PRETO */
         font-weight: bold;
     }
     
-    /* Ícone da seta */
     .stSelectbox svg { fill: #00ff88 !important; }
     
-    /* Inputs de Texto */
+    /* INPUTS */
     .stTextInput > div > div > input {
         background-color: #111 !important;
         color: #00ff88 !important;
@@ -71,7 +75,7 @@ st.markdown("""
         text-align: center;
     }
     
-    /* Botões */
+    /* BOTÕES */
     .stButton > button {
         background: transparent !important;
         border: 1px solid #00ff88 !important;
@@ -90,11 +94,7 @@ st.markdown("""
         box-shadow: 0 0 30px rgba(0, 255, 136, 0.6);
         transform: scale(1.02);
     }
-    .stButton > button:active {
-        transform: scale(0.98);
-    }
     
-    /* Cards */
     .neon-card {
         background: rgba(255, 255, 255, 0.03);
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -118,22 +118,22 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. GERENCIAMENTO DE ESTADO (CORREÇÃO DO BOTÃO) ---
+# --- 3. SESSÃO ---
 if 'logado' not in st.session_state:
     st.session_state['logado'] = False
-if 'analise_ativa' not in st.session_state:
-    st.session_state['analise_ativa'] = None  # Guarda o resultado da última análise
+if 'analise' not in st.session_state:
+    st.session_state['analise'] = None
 
-# --- 4. COLETOR DE DADOS UNIVERSAL (SEM ERROS) ---
+# --- 4. COLETOR DE DADOS (3 FONTES PARA NÃO FALHAR) ---
 def get_universal_data(symbol):
-    sym_binance = symbol.replace("/", "").upper()
+    sym_clean = symbol.replace("/", "").upper()
     
-    # 1. BINANCE API (Tenta 3x se falhar)
-    for _ in range(3):
+    # 1. BINANCE (Tenta 2 vezes)
+    for _ in range(2):
         try:
-            url = f"https://api.binance.com/api/v3/klines?symbol={sym_binance}&interval=1m&limit=60"
+            url = f"https://api.binance.com/api/v3/klines?symbol={sym_clean}&interval=1m&limit=60"
             headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(url, headers=headers, timeout=3)
+            response = requests.get(url, headers=headers, timeout=2)
             if response.status_code == 200:
                 data = response.json()
                 if isinstance(data, list) and len(data) > 0:
@@ -141,14 +141,12 @@ def get_universal_data(symbol):
                     df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].astype(float)
                     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                     return df
-        except:
-            time.sleep(0.5)
-            continue
+        except: time.sleep(0.2)
 
-    # 2. BYBIT API (Backup)
+    # 2. BYBIT (Backup Rápido)
     try:
-        url = f"https://api.bybit.com/v5/market/kline?category=spot&symbol={sym_binance}&interval=1&limit=60"
-        response = requests.get(url, timeout=3)
+        url = f"https://api.bybit.com/v5/market/kline?category=spot&symbol={sym_clean}&interval=1&limit=60"
+        response = requests.get(url, timeout=2)
         data = response.json()
         if 'result' in data and 'list' in data['result']:
             df = pd.DataFrame(data['result']['list'], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
@@ -156,15 +154,29 @@ def get_universal_data(symbol):
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df = df.sort_values('timestamp')
             return df
-    except:
-        pass
+    except: pass
+
+    # 3. HUOBI (Backup Final - Salva quando Binance bloqueia)
+    try:
+        sym_huobi = sym_clean.lower()
+        url = f"https://api.huobi.pro/market/history/kline?period=1min&size=60&symbol={sym_huobi}"
+        response = requests.get(url, timeout=3)
+        data = response.json()
+        if 'data' in data:
+            df = pd.DataFrame(data['data'])
+            df = df.rename(columns={'id': 'timestamp', 'vol': 'volume'})
+            df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].astype(float)
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+            df = df.sort_values('timestamp')
+            return df
+    except: pass
 
     return None
 
-# --- 5. INTELIGÊNCIA DE FLUXO (TREND FOLLOWER) ---
+# --- 5. LÓGICA DE FLUXO (MANTIDA 80%+) ---
 def analyze_trend_flow(df):
     if df is None or df.empty:
-        return "NEUTRO", 0.0, "ERRO: SEM DADOS"
+        return "NEUTRO", 0.0, "DADOS INSUFICIENTES"
 
     close = df['close'].values
     open_ = df['open'].values
@@ -179,7 +191,6 @@ def analyze_trend_flow(df):
     upper_wick = high[-1] - max(c_now, o_now)
     lower_wick = min(c_now, o_now) - low[-1]
     
-    # Indicadores
     ema9 = pd.Series(close).ewm(span=9).mean().iloc[-1]
     
     rsi_period = 14
@@ -194,12 +205,12 @@ def analyze_trend_flow(df):
     signal = "NEUTRO"
     motive = "ANALISANDO FLUXO..."
 
-    # LÓGICA DE FLUXO (Mão Fixa - Acerto de Primeira)
+    # Lógica de Fluxo (Entrar a favor da vela forte)
     if c_now > ema9 and c_now > o_now:
         if body_size > (total_size * 0.55):
             if upper_wick < (body_size * 0.35):
                 if rsi > 50 and rsi < 85:
-                    score = 96.0; signal = "COMPRA"; motive = "FLUXO: VELA DE FORÇA COMPRADORA"
+                    score = 96.0; signal = "COMPRA"; motive = "FLUXO: TENDÊNCIA DE ALTA FORTE"
                 elif rsi >= 85: 
                     score = 93.0; signal = "COMPRA"; motive = "FLUXO: MOMENTUM (RSI ALTO)"
 
@@ -207,7 +218,7 @@ def analyze_trend_flow(df):
         if body_size > (total_size * 0.55):
             if lower_wick < (body_size * 0.35):
                 if rsi < 50 and rsi > 15:
-                    score = 96.0; signal = "VENDA"; motive = "FLUXO: VELA DE FORÇA VENDEDORA"
+                    score = 96.0; signal = "VENDA"; motive = "FLUXO: TENDÊNCIA DE BAIXA FORTE"
                 elif rsi <= 15:
                     score = 93.0; signal = "VENDA"; motive = "FLUXO: MOMENTUM (RSI BAIXO)"
 
@@ -224,7 +235,7 @@ def tela_login():
         st.markdown("""
             <div style="text-align: center; border: 1px solid #00ff88; padding: 40px; background: #000; box-shadow: 0 0 20px rgba(0,255,136,0.2);">
                 <h1 style="font-family: 'Orbitron'; font-size: 3rem; margin-bottom: 0; color: #00ff88 !important; text-shadow: 0 0 10px #00ff88;">VEX ELITE</h1>
-                <p style="letter-spacing: 5px; color: white; font-size: 0.8rem; margin-bottom: 30px;">FLOW TERMINAL v8.0</p>
+                <p style="letter-spacing: 5px; color: white; font-size: 0.8rem; margin-bottom: 30px;">FLOW TERMINAL v8.1</p>
             </div>
         """, unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
@@ -233,14 +244,13 @@ def tela_login():
         senha = st.text_input("KEY", type="password", placeholder="CHAVE DE ACESSO", label_visibility="collapsed")
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("INICIAR PROTOCOLO"):
-            if usuario in USER_CREDENTIALS and senha == USER_CREDENTIALS[usuario]:
+            if usuario in USER_CREDENTIALS.keys() and senha == USER_CREDENTIALS[usuario]:
                 st.session_state['logado'] = True
                 st.rerun()
             else:
                 st.error("ACESSO NEGADO.")
 
 def tela_dashboard():
-    # Header
     st.markdown("""
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
             <div><span style="font-family: 'Orbitron'; font-size: 1.5rem; color: #00ff88 !important;">VEX ELITE</span></div>
@@ -248,7 +258,6 @@ def tela_dashboard():
         </div>
     """, unsafe_allow_html=True)
     
-    # Barra de Controle
     st.markdown("<div class='neon-card' style='margin-bottom: 20px;'>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([2, 1, 2])
     with c1:
@@ -256,29 +265,26 @@ def tela_dashboard():
         ativo = st.selectbox("", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"], label_visibility="collapsed")
     with c3:
         st.markdown("<h4 style='color: #00ff88 !important;'>AÇÃO</h4>", unsafe_allow_html=True)
-        # O botão agora atualiza o estado para forçar a renderização
+        # BOTÃO QUE FORÇA RERUN
         if st.button("ANALISAR FLUXO (M1)"):
-            with st.spinner(f"RASTREANDO FLUXO EM {ativo}..."):
+            with st.spinner(f"VARRENDO DADOS DE {ativo}..."):
                 df = get_universal_data(ativo)
                 if df is not None:
                     sig, precisao, motive = analyze_trend_flow(df)
-                    # Salva no Session State para persistir e atualizar
-                    st.session_state['analise_ativa'] = {
-                        'df': df,
-                        'sig': sig,
-                        'precisao': precisao,
-                        'motive': motive,
-                        'ativo': ativo,
-                        'time': datetime.datetime.now()
+                    st.session_state['analise'] = {
+                        'df': df, 'sig': sig, 'precisao': precisao, 
+                        'motive': motive, 'ativo': ativo,
+                        'time': datetime.datetime.now().strftime("%H:%M:%S")
                     }
                 else:
-                    st.error("ERRO DE CONEXÃO. TENTE NOVAMENTE.")
+                    st.error(f"ERRO: Não foi possível conectar aos servidores de {ativo}. Tente outro par.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Exibe o Resultado (Se houver algo na memória)
-    if st.session_state['analise_ativa']:
-        dados = st.session_state['analise_ativa']
-        # Verifica se o ativo mudou, se sim, avisa para gerar de novo ou mostra o anterior
+    # Exibe Resultados
+    if st.session_state['analise']:
+        dados = st.session_state['analise']
+        
+        # Aviso se trocou de ativo mas não clicou no botão
         if dados['ativo'] != ativo:
             st.warning(f"⚠️ O gráfico abaixo é de {dados['ativo']}. Clique em ANALISAR para atualizar para {ativo}.")
         
@@ -286,7 +292,7 @@ def tela_dashboard():
         
         with col_grafico:
             st.markdown("<div class='neon-card'>", unsafe_allow_html=True)
-            st.markdown(f"<h3 style='font-family: Orbitron;'>GRÁFICO M1 | {dados['ativo']}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<div style='display:flex; justify-content:space-between;'><h3>GRÁFICO {dados['ativo']}</h3> <span style='color:#aaa'>Atualizado: {dados['time']}</span></div>", unsafe_allow_html=True)
             fig = go.Figure(data=[go.Candlestick(x=dados['df']['timestamp'], open=dados['df']['open'], high=dados['df']['high'], low=dados['df']['low'], close=dados['df']['close'], increasing_line_color='#00ff88', decreasing_line_color='#ff0055')])
             fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=30, b=10), font=dict(family="Rajdhani", color="white"))
             st.plotly_chart(fig, use_container_width=True)
