@@ -4,6 +4,7 @@ import ccxt
 import time
 import numpy as np
 import plotly.graph_objects as go
+import requests # BIBLIOTECA EXTRA PARA O PLANO B
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -104,24 +105,55 @@ if 'logado' not in st.session_state:
 if 'user_logged' not in st.session_state:
     st.session_state['user_logged'] = ""
 
-# --- 5. INTELIGÊNCIA VEX ATOMIC v5.0 (CORREÇÃO DE ASSERTIVIDADE) ---
+# --- 5. SISTEMA HÍBRIDO DE DADOS (CORREÇÃO DO ERRO) ---
 def get_fast_data(symbol):
-    # Conexão Otimizada
-    exchanges = [ccxt.bybit({'timeout': 4000}), ccxt.binance({'timeout': 4000})] 
-    for ex in exchanges:
-        try:
-            ohlcv = ex.fetch_ohlcv(symbol, timeframe='1m', limit=50) 
-            if ohlcv:
-                df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-                return df
-        except: continue
+    """
+    Tenta pegar dados via CCXT. Se falhar, usa API Direta da Binance.
+    Garante que o sistema nunca caia.
+    """
+    
+    # PLANO A: CCXT (Bibliotecas Padrão)
+    try:
+        exchanges = [ccxt.binance(), ccxt.bybit()]
+        for ex in exchanges:
+            try:
+                # Tenta pegar apenas as últimas 50 velas de 1m
+                ohlcv = ex.fetch_ohlcv(symbol, timeframe='1m', limit=50)
+                if ohlcv:
+                    df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                    return df
+            except:
+                continue
+    except Exception as e:
+        pass # Falhou silenciosamente, vai pro Plano B
+
+    # PLANO B: REQUISIÇÃO DIRETA (API REST) - INFALÍVEL
+    try:
+        # Formata o símbolo para o padrão da Binance API (ex: BTC/USDT -> BTCUSDT)
+        clean_symbol = symbol.replace("/", "").upper()
+        url = f"https://api.binance.com/api/v3/klines?symbol={clean_symbol}&interval=1m&limit=50"
+        
+        response = requests.get(url, timeout=5)
+        data = response.json()
+        
+        if isinstance(data, list) and len(data) > 0:
+            # A Binance retorna lista de listas. Precisamos converter.
+            df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
+            
+            # Converte tipos (tudo vem como string da API direta)
+            df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].astype(float)
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            return df
+    except Exception as e:
+        return None
+
     return None
 
 def analyze_atomic_pressure(df):
     """
-    Nova Lógica de Pressão Instantânea para M1 (Faltando 10s).
-    Foca em rejeição de pavio e Stochastic RSI (mais rápido que RSI comum).
+    Lógica VEX ATOMIC v5.0
+    Focada em M1 faltando 10 segundos.
     """
     # Dados Recentes
     close = df['close'].values
@@ -129,7 +161,7 @@ def analyze_atomic_pressure(df):
     high = df['high'].values
     low = df['low'].values
     
-    # Vela Atual (A que está acabando) e Anterior
+    # Vela Atual (A que está acabando)
     c_now = close[-1]
     o_now = open_[-1]
     h_now = high[-1]
@@ -140,8 +172,7 @@ def analyze_atomic_pressure(df):
     upper_wick = h_now - max(c_now, o_now)
     lower_wick = min(c_now, o_now) - l_now
     
-    # --- INDICADOR 1: STOCHASTIC RSI (Detector de Topo/Fundo Rápido) ---
-    # O RSI normal é lento para M1. O StochRSI é o segredo.
+    # --- INDICADOR 1: STOCHASTIC RSI (Detector Rápido) ---
     rsi_period = 14
     delta = pd.Series(close).diff()
     gain = (delta.where(delta > 0, 0)).rolling(rsi_period).mean()
@@ -149,76 +180,72 @@ def analyze_atomic_pressure(df):
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs))
     
-    # Cálculo do Estocástico do RSI
+    # Preenche NaN com 50 para não quebrar no inicio
+    rsi = rsi.fillna(50)
+    
     min_rsi = rsi.rolling(window=14).min()
     max_rsi = rsi.rolling(window=14).max()
-    stoch_rsi = (rsi - min_rsi) / (max_rsi - min_rsi)
     
-    k = stoch_rsi.rolling(window=3).mean().iloc[-1] * 100 # Linha K rápida
+    # Evita divisão por zero
+    denominator = max_rsi - min_rsi
+    denominator = denominator.replace(0, 1) 
+    
+    stoch_rsi = (rsi - min_rsi) / denominator
+    k = stoch_rsi.rolling(window=3).mean().iloc[-1] * 100 
     
     # --- INDICADOR 2: MÉDIAS ESTRUTURAIS ---
     ema9 = pd.Series(close).ewm(span=9).mean().iloc[-1]
     
     score = 0.0
     signal = "NEUTRO"
-    motive = "ANALISANDO..."
+    motive = "ANALISANDO FLUXO..."
 
-    # --- LÓGICA DE DECISÃO (ATOMIC) ---
+    # LÓGICA ATOMIC
     
-    # CENÁRIO 1: REVERSÃO DE TOPO (PUT/VENDA)
-    # Se o StochRSI estiver estourado (>90) E a vela atual deixar pavio em cima
-    if k > 85:
-        # Se a vela atual for VERDE, mas deixou pavio superior grande (Tentou subir e falhou)
+    # 1. REJEIÇÃO DE TOPO (VENDA)
+    if k > 85: # Mercado esticado na alta
         if c_now > o_now and upper_wick > (body_size * 0.4):
             score = 96.5
             signal = "VENDA"
-            motive = "ATOMIC: REJEIÇÃO DE TOPO + RSI ESTOURADO"
-        
-        # Se a vela atual já virou VERMELHA (Força vendedora entrou no final)
-        elif c_now < o_now:
+            motive = "ATOMIC: REJEIÇÃO DE TOPO (EXAUSTÃO)"
+        elif c_now < o_now: # Já virou vermelho
             score = 94.0
             signal = "VENDA"
-            motive = "ATOMIC: VIRADA DE VELA (PULLBACK)"
+            motive = "ATOMIC: VIRADA DE VELA (CORREÇÃO)"
 
-    # CENÁRIO 2: REVERSÃO DE FUNDO (CALL/COMPRA)
-    # Se o StochRSI estiver no chão (<10)
-    elif k < 15:
-        # Se a vela atual for VERMELHA, mas deixou pavio inferior grande
+    # 2. REJEIÇÃO DE FUNDO (COMPRA)
+    elif k < 15: # Mercado esticado na baixa
         if c_now < o_now and lower_wick > (body_size * 0.4):
             score = 96.5
             signal = "COMPRA"
-            motive = "ATOMIC: REJEIÇÃO DE FUNDO + RSI SOBREVENDA"
-        
-        # Se a vela atual já virou VERDE
-        elif c_now > o_now:
+            motive = "ATOMIC: REJEIÇÃO DE FUNDO (EXAUSTÃO)"
+        elif c_now > o_now: # Já virou verde
             score = 94.0
             signal = "COMPRA"
-            motive = "ATOMIC: VIRADA DE VELA (PULLBACK)"
+            motive = "ATOMIC: VIRADA DE VELA (CORREÇÃO)"
 
-    # CENÁRIO 3: FLUXO CONTÍNUO (MOMENTUM)
-    # Só entra a favor da tendência se NÃO estiver sobrecomprado/vendido
+    # 3. MOMENTUM (FLUXO) - SÓ SE NÃO ESTIVER ESTICADO
     else:
-        # Tendência de Alta Limpa
+        # Tendência de Alta
         if c_now > ema9 and c_now > o_now and upper_wick < (body_size * 0.2):
-            if k > 40 and k < 75: # Tem espaço para subir
+            if k > 40 and k < 75: # Zona saudável
                 score = 92.0
                 signal = "COMPRA"
-                motive = "ATOMIC: FLUXO DE FORÇA (VELA CHEIA)"
+                motive = "ATOMIC: FLUXO DE FORÇA COMPRADORA"
         
-        # Tendência de Baixa Limpa
+        # Tendência de Baixa
         elif c_now < ema9 and c_now < o_now and lower_wick < (body_size * 0.2):
-            if k < 60 and k > 25: # Tem espaço para cair
+            if k < 60 and k > 25: # Zona saudável
                 score = 92.0
                 signal = "VENDA"
-                motive = "ATOMIC: FLUXO DE FORÇA (VELA CHEIA)"
+                motive = "ATOMIC: FLUXO DE FORÇA VENDEDORA"
 
-    # --- TRAVA DE SEGURANÇA (DOJI) ---
-    # Se a vela for insignificante (quase um traço), não faz nada.
+    # TRAVA DE SEGURANÇA (DOJI)
     avg_body = np.mean(abs(close[-5:] - open_[-5:]))
-    if body_size < (avg_body * 0.25):
+    if body_size < (avg_body * 0.2):
         score = 10.0
         signal = "NEUTRO"
-        motive = "MERCADO PARADO (DOJI) - NÃO ENTRAR"
+        motive = "DOJI DETECTADO (SEM VOLUME)"
 
     return signal, score, motive
 
@@ -270,11 +297,11 @@ def tela_dashboard():
     st.markdown("</div>", unsafe_allow_html=True)
 
     if acionar:
-        with st.spinner(f"CALCULANDO PRESSÃO DE MERCADO EM {ativo}..."):
+        # Spinner removido delay para ser instantâneo
+        with st.spinner(f"CONECTANDO..."):
             df = get_fast_data(ativo)
             
             if df is not None:
-                # NOVA INTELIGÊNCIA V5.0
                 sig, precisao, motivo = analyze_atomic_pressure(df)
                 
                 col_grafico, col_dados = st.columns([2.5, 1.5])
@@ -291,7 +318,7 @@ def tela_dashboard():
                     st.markdown("<div class='neon-card' style='text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;'>", unsafe_allow_html=True)
                     st.markdown("<p style='color: #aaa !important; font-size: 0.9rem;'>PROBABILIDADE INSTANTÂNEA</p>", unsafe_allow_html=True)
                     
-                    cor_score = "#00ff88" if precisao >= 92 else "#ffcc00" # Filtro de 92%
+                    cor_score = "#00ff88" if precisao >= 92 else "#ffcc00"
                     if precisao < 60: cor_score = "#ff0055"
 
                     st.markdown(f"<div class='score-glow' style='color: {cor_score} !important;'>{precisao:.1f}%</div>", unsafe_allow_html=True)
@@ -320,7 +347,8 @@ def tela_dashboard():
                     st.markdown(f"<div style='margin-top: auto; padding-top: 20px; font-size: 1.5rem;'>${df['close'].iloc[-1]:.2f}</div>", unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
             else:
-                st.error("ERRO DE CONEXÃO COM A EXCHANGE.")
+                # MENSAGEM DE ERRO MELHORADA
+                st.error("FALHA CRÍTICA DE DADOS: Verifique sua conexão com a internet ou se o ativo existe.")
 
     st.markdown("<br><br><br>", unsafe_allow_html=True)
     if st.button("ENCERRAR SESSÃO"):
