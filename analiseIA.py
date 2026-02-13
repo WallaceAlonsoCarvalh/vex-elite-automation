@@ -5,287 +5,353 @@ import plotly.graph_objects as go
 import datetime
 import time 
 
-# --- IMPORTAÇÃO SEGURA ---
+# --- IMPORTAÇÃO DE SEGURANÇA ---
 try:
     import yfinance as yf
     YF_AVAILABLE = True
 except ImportError:
     YF_AVAILABLE = False
 
-# --- 1. CONFIGURAÇÃO (FOREX PRO) ---
+# --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
-    page_title="VEX ELITE | FOREX PRO",
+    page_title="VEX ELITE | PRO TERMINAL",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS (VISUAL FIXO E LIMPO) ---
+# --- 2. CSS (VISUAL INVESTING DARK) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap');
     
     .stApp {
-        background-color: #050505;
-        background-image: radial-gradient(at 50% 0%, #111 0%, #000 100%);
-        color: white;
+        background-color: #121212;
+        color: #e0e0e0;
     }
     
     h1, h2, h3, p, div, span { font-family: 'Rajdhani', sans-serif !important; }
     
-    /* MENU DROPDOWN */
+    /* MENU ESTILO INVESTING */
     .stSelectbox > div > div {
-        background-color: #080808 !important;
-        color: #00ff88 !important;
-        border: 1px solid #333 !important;
+        background-color: #1e1e1e !important;
+        color: #ffffff !important;
+        border: 1px solid #444 !important;
     }
-    div[data-baseweb="popover"] { background-color: #080808 !important; }
-    li[role="option"] { color: white !important; background-color: #080808 !important; }
-    li[role="option"]:hover { background-color: #00ff88 !important; color: black !important; }
+    div[data-baseweb="popover"] { background-color: #1e1e1e !important; }
+    li[role="option"] { color: white !important; background-color: #1e1e1e !important; }
+    li[role="option"]:hover { background-color: #2196F3 !important; color: white !important; }
+    .stSelectbox svg { fill: white !important; }
     
-    /* BOTÕES */
+    /* BOTÃO DE AÇÃO */
     .stButton > button {
-        background: #00ff88 !important;
-        color: black !important;
-        font-family: 'Orbitron', sans-serif;
-        font-weight: 900;
+        background: #2196F3 !important; /* Azul Investing */
+        color: white !important;
+        font-family: 'Roboto', sans-serif;
+        font-weight: 700;
         border: none;
         padding: 15px;
+        text-transform: uppercase;
+        border-radius: 4px;
         transition: 0.3s;
     }
     .stButton > button:hover {
-        box-shadow: 0 0 25px rgba(0, 255, 136, 0.5);
-        transform: scale(1.02);
+        background: #1976D2 !important;
+        box-shadow: 0 0 15px rgba(33, 150, 243, 0.4);
     }
 
-    .neon-card {
-        background: rgba(255,255,255,0.03);
-        border: 1px solid #222;
+    /* CARD DE RESULTADOS */
+    .data-card {
+        background: #1e1e1e;
+        border-left: 4px solid #2196F3;
         padding: 20px;
-        border-radius: 10px;
+        border-radius: 4px;
         margin-bottom: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
     
-    .score-glow {
-        font-family: 'Orbitron';
-        font-size: 4rem;
+    .big-score {
+        font-family: 'Roboto';
+        font-size: 4.5rem;
         font-weight: 900;
-        text-shadow: 0 0 20px currentColor;
+        line-height: 1;
     }
     
+    /* Esconde elementos nativos */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. ESTADO DA SESSÃO ---
+# --- 3. SESSÃO E LOGIN ---
 if 'logado' not in st.session_state:
     st.session_state['logado'] = False
 
-# CREDENCIAIS
 CREDENCIAIS = {
     "wallace": "admin123",
     "cliente01": "pro2026"
 }
 
-# --- 4. COLETOR DE DADOS (COM CACHE DE 60 SEGUNDOS) ---
-# O @st.cache_data impede que o gráfico mude se você clicar várias vezes no mesmo minuto
-@st.cache_data(ttl=60, show_spinner=False)
-def get_forex_data_cached(pair):
+# --- 4. COLETOR DE DADOS REAIS (SEM SIMULAÇÃO) ---
+# Cache de 30s para evitar que o gráfico mude a cada clique (Estabilidade)
+@st.cache_data(ttl=30, show_spinner=False) 
+def get_real_market_data(pair):
     """
-    Busca dados reais. Se falhar, usa matemática determinística (não aleatória)
-    para que o gráfico não fique mudando na frente do usuário.
+    Busca dados EXCLUSIVAMENTE do Yahoo Finance (Base Global).
+    Se falhar, retorna None (não gera gráfico falso).
     """
+    if not YF_AVAILABLE:
+        return None, "ERRO: BIBLIOTECA FALTANDO"
+
+    # Mapeamento para Tickers Oficiais do Yahoo (Padrão Mundial)
     symbol_map = {
-        "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "JPY=X",
-        "USD/BRL": "BRL=X", "EUR/JPY": "EURJPY=X", "GBP/JPY": "GBPJPY=X",
-        "AUD/USD": "AUDUSD=X", "USD/CAD": "CAD=X"
+        "EUR/USD": "EURUSD=X", 
+        "GBP/USD": "GBPUSD=X", 
+        "USD/JPY": "JPY=X",
+        "USD/CHF": "CHF=X", 
+        "AUD/USD": "AUDUSD=X", 
+        "USD/CAD": "CAD=X",
+        "NZD/USD": "NZDUSD=X"
     }
     
     ticker = symbol_map.get(pair, "EURUSD=X")
     
-    # TENTATIVA 1: DADOS REAIS (YFINANCE)
-    if YF_AVAILABLE:
-        try:
-            df = yf.download(ticker, period="1d", interval="1m", progress=False)
-            if not df.empty:
-                df = df.reset_index()
-                df.columns = df.columns.str.lower()
-                if 'datetime' in df.columns: df = df.rename(columns={'datetime': 'timestamp'})
-                if 'date' in df.columns: df = df.rename(columns={'date': 'timestamp'})
-                # Pega as últimas 60 velas para o gráfico ficar limpo
-                return df.tail(60), "MERCADO REAL (ONLINE)"
-        except:
-            pass
+    try:
+        # Baixa dados reais de 1 minuto
+        # 'period=1d' pega o dia de hoje
+        # 'interval=1m' pega velas de 1 minuto
+        df = yf.download(ticker, period="1d", interval="1m", progress=False)
+        
+        if df.empty:
+            return None, "MERCADO FECHADO OU SEM DADOS"
+            
+        df = df.reset_index()
+        
+        # Padronização de Colunas (Yahoo as vezes muda maiuscula/minuscula)
+        df.columns = df.columns.str.lower()
+        if 'datetime' in df.columns: df = df.rename(columns={'datetime': 'timestamp'})
+        if 'date' in df.columns: df = df.rename(columns={'date': 'timestamp'})
+        
+        # Validação extra
+        if 'close' not in df.columns:
+            return None, "ERRO NO FORMATO DE DADOS"
 
-    # TENTATIVA 2: SIMULAÇÃO ESTÁVEL (BACKUP)
-    # Se cair aqui, geramos um gráfico que é SEMPRE O MESMO para aquela hora.
-    # Isso impede que o gráfico fique "pulando".
-    dates = pd.date_range(end=datetime.datetime.now(), periods=60, freq='1min')
-    
-    # A semente é baseada na HORA atual e no NOME do par. 
-    # Dentro da mesma hora, o gráfico será idêntico.
-    seed_val = int(datetime.datetime.now().strftime("%Y%m%d%H")) + len(pair)
-    np.random.seed(seed_val)
-    
-    base_price = 1.0850 if "EUR" in pair else 150.00 if "JPY" in pair else 1.2500
-    
-    # Cria movimento realista
-    returns = np.random.normal(0, 0.0002, 60)
-    price = base_price * (1 + returns).cumprod()
-    
-    df = pd.DataFrame({
-        'timestamp': dates,
-        'open': price,
-        'close': price * (1 + np.random.normal(0, 0.0001, 60)),
-        'high': price * 1.0003,
-        'low': price * 0.9997,
-        'volume': np.random.randint(100, 500, 60)
-    })
-    
-    return df, "MODO DE SEGURANÇA (ESTÁVEL)"
+        # Pega as últimas 50 velas para o gráfico ficar limpo igual corretora
+        return df.tail(50), "ONLINE • REAL DATA"
+        
+    except Exception as e:
+        return None, "FALHA DE CONEXÃO COM SERVIDOR"
 
-# --- 5. CÉREBRO VEX (LÓGICA DE FLUXO) ---
-def analyze_market(df):
-    if df is None or df.empty: return "NEUTRO", 0.0, "SEM DADOS"
+# --- 5. LÓGICA VEX DE FLUXO (PIPS) ---
+def analyze_market_structure(df):
+    if df is None or df.empty: return "NEUTRO", 0.0, "---"
 
+    # Converte para numpy array para performance
     close = df['close'].values
     open_ = df['open'].values
     high = df['high'].values
     low = df['low'].values
     
-    # Última vela (atual)
+    # Vela Atual (Última)
     c = close[-1]; o = open_[-1]; h = high[-1]; l = low[-1]
-    body = abs(c - o)
-    wick_up = h - max(c, o)
-    wick_down = min(c, o) - l
     
-    # Médias e RSI
-    ema9 = pd.Series(close).ewm(span=9).mean().iloc[-1]
+    # Cálculo de Corpo e Pavio
+    body_size = abs(c - o)
+    total_range = h - l
+    if total_range == 0: total_range = 0.00001 # Evita divisão por zero
     
+    upper_wick = h - max(c, o)
+    lower_wick = min(c, o) - l
+    
+    # Indicadores Técnicos
+    # Média Móvel Exponencial (EMA) de 9 períodos
+    ema9 = pd.Series(close).ewm(span=9, adjust=False).mean().iloc[-1]
+    
+    # RSI (Índice de Força Relativa)
     delta = pd.Series(close).diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs)).iloc[-1]
-    rsi = 50 if np.isnan(rsi) else rsi
+    if np.isnan(rsi): rsi = 50
     
     score = 50.0
     signal = "NEUTRO"
     motive = "AGUARDANDO DEFINIÇÃO"
 
-    # LÓGICA: FLUXO DE VELA (SEGUIR A FORÇA)
+    # --- LÓGICA DE DECISÃO (BASEADA EM FLUXO E FORÇA) ---
     
-    # COMPRA
-    if c > ema9 and c > o: # Acima da média e Verde
-        if rsi > 50 and rsi < 85:
-            # Se não tiver pavio gigante em cima rejeitando
-            if wick_up < body * 0.4: 
-                score = 94.0; signal = "COMPRA"; motive = "FLUXO COMPRADOR FORTE"
-            else:
-                score = 70.0; signal = "NEUTRO"; motive = "REJEIÇÃO SUPERIOR (PERIGO)"
-        elif rsi >= 85:
-            score = 91.0; signal = "COMPRA"; motive = "MOMENTUM DE ALTA (RSI)"
-
-    # VENDA
-    elif c < ema9 and c < o: # Abaixo da média e Vermelha
-        if rsi < 50 and rsi > 15:
-            # Se não tiver pavio gigante em baixo rejeitando
-            if wick_down < body * 0.4:
-                score = 94.0; signal = "VENDA"; motive = "FLUXO VENDEDOR FORTE"
-            else:
-                score = 70.0; signal = "NEUTRO"; motive = "REJEIÇÃO INFERIOR (PERIGO)"
-        elif rsi <= 15:
-            score = 91.0; signal = "VENDA"; motive = "MOMENTUM DE BAIXA (RSI)"
+    # CENÁRIO DE COMPRA (BULLISH)
+    # Preço acima da média + Vela Verde + RSI apontando pra cima (mas não saturado)
+    if c > ema9 and c > o:
+        # Se a vela tem corpo forte (mais que 50% do tamanho total)
+        if body_size > (total_range * 0.5):
+            if rsi > 50 and rsi < 85:
+                score = 94.5
+                signal = "COMPRA"
+                motive = "FLUXO: VELA DE FORÇA COMPRADORA"
+            elif rsi >= 85:
+                # RSI muito alto pode ser exaustão, reduzimos a nota um pouco
+                score = 88.0
+                signal = "COMPRA"
+                motive = "ALERTA: FORÇA COMPRADORA EXTREMA"
+    
+    # CENÁRIO DE VENDA (BEARISH)
+    # Preço abaixo da média + Vela Vermelha
+    elif c < ema9 and c < o:
+        # Corpo forte
+        if body_size > (total_range * 0.5):
+            if rsi < 50 and rsi > 15:
+                score = 94.5
+                signal = "VENDA"
+                motive = "FLUXO: VELA DE FORÇA VENDEDORA"
+            elif rsi <= 15:
+                score = 88.0
+                signal = "VENDA"
+                motive = "ALERTA: FORÇA VENDEDORA EXTREMA"
 
     return signal, score, motive
 
-# --- 6. TELAS ---
+# --- 6. INTERFACE DE LOGIN ---
 def tela_login():
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([1, 1, 1])
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
-        st.markdown("<h1 style='text-align:center; color:#00ff88;'>VEX ELITE</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center;'>FOREX TERMINAL v12.0</p>", unsafe_allow_html=True)
+        st.markdown("""
+            <div style="text-align:center; padding: 40px; background: #1e1e1e; border-radius: 10px; border-top: 5px solid #2196F3;">
+                <h1 style="color:white; margin:0;">VEX ELITE</h1>
+                <p style="color:#aaa; font-size: 0.8rem; letter-spacing: 2px;">FOREX INTELLIGENCE v13.0</p>
+            </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
         
-        user = st.text_input("USUÁRIO", label_visibility="collapsed", placeholder="ID")
-        st.markdown("<div style='height:5px'></div>", unsafe_allow_html=True)
-        pwd = st.text_input("SENHA", type="password", label_visibility="collapsed", placeholder="SENHA")
+        user = st.text_input("ID DE ACESSO", label_visibility="collapsed", placeholder="Usuário")
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        pwd = st.text_input("SENHA", type="password", label_visibility="collapsed", placeholder="Senha")
         
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("ENTRAR"):
+        if st.button("CONECTAR AO SERVIDOR"):
             if user in CREDENCIAIS and pwd == CREDENCIAIS[user]:
                 st.session_state['logado'] = True
                 st.rerun()
             else:
-                st.error("DADOS INVÁLIDOS")
+                st.error("Credenciais não reconhecidas.")
 
+# --- 7. DASHBOARD PRINCIPAL ---
 def tela_dashboard():
-    # Topo
+    # Barra Superior
     st.markdown("""
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding-bottom:10px; margin-bottom:20px;">
-            <span style="font-size:1.5rem; font-weight:bold; color:#00ff88;">VEX FOREX</span>
-            <span style="background:#00ff88; color:black; padding:2px 10px; font-weight:bold; border-radius:3px;">ONLINE</span>
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding-bottom:15px; margin-bottom:20px;">
+            <div>
+                <span style="font-size:1.8rem; font-weight:900; color:white;">VEX</span>
+                <span style="font-size:1.8rem; font-weight:400; color:#2196F3;">FOREX</span>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <span style="font-size:0.8rem; color:#aaa;">DATA FEED:</span>
+                <span style="background:#2196F3; color:white; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:0.8rem;">YAHOO FINANCE</span>
+            </div>
         </div>
     """, unsafe_allow_html=True)
     
-    # Seletor
-    st.markdown("<div class='neon-card'>", unsafe_allow_html=True)
+    # Painel de Controle
     c1, c2 = st.columns([3, 1])
     with c1:
-        st.markdown("<h4 style='margin:0; color:#00ff88;'>ATIVO</h4>", unsafe_allow_html=True)
-        ativo = st.selectbox("Ativo", ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CAD", "AUD/USD"], label_visibility="collapsed")
+        ativo = st.selectbox("SELECIONE O PAR DE MOEDAS", 
+                             ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD"])
     with c2:
-        st.markdown("<h4 style='margin:0; color:#00ff88;'>AÇÃO</h4>", unsafe_allow_html=True)
-        # Botão sem lógica complexa, apenas refresh
-        gerar = st.button("ANALISAR")
-    st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True) # Espaçador
+        analisar = st.button("GERAR ANÁLISE")
 
-    # Processamento
-    if gerar:
-        with st.spinner("CONECTANDO AO MERCADO..."):
-            # Chama a função com Cache
-            df, status = get_forex_data_cached(ativo)
+    # Área de Resultados
+    if analisar:
+        with st.spinner("SINCRONIZANDO DADOS REAIS..."):
+            # 1. Pega dados (Cacheado por 30s)
+            df, status = get_real_market_data(ativo)
             
-            # Analisa
-            sig, score, motive = analyze_market(df)
-            
-            # Exibição
-            g_col, d_col = st.columns([2, 1])
-            
-            with g_col:
-                st.markdown(f"<div class='neon-card'><h4>GRÁFICO {ativo} <span style='font-size:0.7rem; color:#aaa'>({status})</span></h4>", unsafe_allow_html=True)
-                fig = go.Figure(data=[go.Candlestick(x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'], increasing_line_color='#00ff88', decreasing_line_color='#ff0055')])
-                fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=10, b=10))
-                st.plotly_chart(fig, use_container_width=True)
-                st.markdown("</div>", unsafe_allow_html=True)
+            if df is not None:
+                # 2. Analisa
+                sig, score, motive = analyze_market_structure(df)
                 
-            with d_col:
-                st.markdown("<div class='neon-card' style='text-align:center; height:100%;'>", unsafe_allow_html=True)
-                st.markdown("<span>ASSERTIVIDADE</span>", unsafe_allow_html=True)
+                # Layout Colunas
+                g_col, i_col = st.columns([2, 1.2])
                 
-                cor = "#00ff88" if score >= 90 else "#ffcc00"
-                if score < 60: cor = "#ff0055"
+                # --- COLUNA DO GRÁFICO ---
+                with g_col:
+                    st.markdown(f"""
+                        <div class="data-card">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                                <span style="font-weight:bold; font-size:1.2rem;">{ativo}</span>
+                                <span style="color:#2196F3; font-weight:bold;">{status}</span>
+                            </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Gráfico Profissional (Estilo Investing)
+                    fig = go.Figure(data=[go.Candlestick(
+                        x=df['timestamp'],
+                        open=df['open'], high=df['high'],
+                        low=df['low'], close=df['close'],
+                        increasing_line_color='#26a69a', # Verde Investing
+                        decreasing_line_color='#ef5350'  # Vermelho Investing
+                    )])
+                    
+                    fig.update_layout(
+                        template="plotly_dark",
+                        height=400,
+                        xaxis_rangeslider_visible=False,
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        margin=dict(l=10, r=10, t=10, b=10),
+                        xaxis=dict(showgrid=False),
+                        yaxis=dict(showgrid=True, gridcolor='#333')
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
                 
-                st.markdown(f"<div class='score-glow' style='color:{cor};'>{score:.0f}%</div>", unsafe_allow_html=True)
-                
-                if score >= 90:
-                    direcao = "COMPRA" if sig == "COMPRA" else "VENDA"
-                    bg_color = "#00ff88" if sig == "COMPRA" else "#ff0055"
-                    st.markdown(f"<div style='background:{bg_color}; color:black; font-weight:bold; font-size:2rem; padding:10px; border-radius:5px; margin-top:10px;'>{direcao}</div>", unsafe_allow_html=True)
-                    st.markdown(f"<p style='margin-top:10px; color:#ccc; font-size:0.8rem;'>{motive}</p>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div style='border:1px solid {cor}; color:{cor}; font-weight:bold; padding:10px; margin-top:10px;'>AGUARDE</div>", unsafe_allow_html=True)
-                    st.markdown(f"<p style='margin-top:10px; color:#ccc; font-size:0.8rem;'>{motive}</p>", unsafe_allow_html=True)
-                
-                st.markdown("</div>", unsafe_allow_html=True)
+                # --- COLUNA DA INTELIGÊNCIA ---
+                with i_col:
+                    st.markdown('<div class="data-card" style="height: 100%; text-align: center;">', unsafe_allow_html=True)
+                    st.markdown('<p style="color:#aaa; font-weight:bold;">PROBABILIDADE</p>', unsafe_allow_html=True)
+                    
+                    # Definição de Cores do Score
+                    cor_score = "#26a69a" if score >= 90 else "#ffcc00"
+                    if score < 60: cor_score = "#ef5350"
+                    
+                    st.markdown(f'<div class="big-score" style="color:{cor_score}">{score:.1f}%</div>', unsafe_allow_html=True)
+                    
+                    st.markdown("---")
+                    
+                    if score >= 90:
+                        sinal_texto = "COMPRA" if sig == "COMPRA" else "VENDA"
+                        bg_sinal = "#26a69a" if sig == "COMPRA" else "#ef5350"
+                        
+                        st.markdown(f"""
+                            <div style="background: {bg_sinal}; padding: 15px; border-radius: 5px; color: white;">
+                                <h2 style="margin:0; font-weight:900;">{sinal_texto}</h2>
+                            </div>
+                            <p style="margin-top:15px; color: white;"><b>MOTIVO:</b> {motive}</p>
+                            <p style="color: #aaa; font-size: 0.8rem;">Entrada imediata (M1)</p>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown("""
+                            <div style="border: 2px solid #ffcc00; padding: 15px; border-radius: 5px; color: #ffcc00;">
+                                <h3 style="margin:0;">AGUARDE</h3>
+                            </div>
+                            <p style="margin-top:15px; color: #aaa;">Mercado sem direção clara.</p>
+                        """, unsafe_allow_html=True)
+                        
+                    st.markdown(f"<p style='margin-top:20px; font-size:1.5rem; font-weight:bold;'>${df['close'].iloc[-1]:.5f}</p>", unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    
+            else:
+                st.error("⚠️ NÃO FOI POSSÍVEL CARREGAR DADOS REAIS.")
+                st.info("Verifique se a biblioteca 'yfinance' está instalada no servidor ou tente outro par.")
 
     st.markdown("<br><br>", unsafe_allow_html=True)
-    if st.button("SAIR"):
+    if st.button("DESCONECTAR"):
         st.session_state['logado'] = False
         st.rerun()
 
-# --- 7. START ---
+# --- 8. EXECUÇÃO ---
 if st.session_state['logado']:
     tela_dashboard()
 else:
