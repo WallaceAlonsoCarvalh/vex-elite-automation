@@ -3,23 +3,17 @@ import pandas as pd
 import numpy as np
 import datetime
 import time
+import requests
 import streamlit.components.v1 as components
 
-# --- TENTATIVA DE IMPORTAÇÃO SEGURA ---
-try:
-    import yfinance as yf
-    YF_AVAILABLE = True
-except ImportError:
-    YF_AVAILABLE = False
-
-# --- 1. CONFIGURAÇÃO DA PÁGINA ---
+# --- 1. CONFIGURAÇÃO ---
 st.set_page_config(
-    page_title="VEX ELITE | TITAN",
+    page_title="VEX ELITE | TITAN PRO",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS (VISUAL DARK NEON - VEX STYLE) ---
+# --- 2. CSS (VISUAL IDÊNTICO AO SEU PRINT) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap');
@@ -87,10 +81,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. MAPEAMENTO PARA O GRÁFICO (TRADINGVIEW) E DADOS (YAHOO) ---
+# --- 3. MAPEAMENTO DE ATIVOS ---
 PAIRS = {
-    "EUR/USD": {"tv": "FX:EURUSD", "yf": "EURUSD=X"},
     "GBP/USD": {"tv": "FX:GBPUSD", "yf": "GBPUSD=X"},
+    "EUR/USD": {"tv": "FX:EURUSD", "yf": "EURUSD=X"},
     "USD/JPY": {"tv": "FX:USDJPY", "yf": "JPY=X"},
     "USD/CHF": {"tv": "FX:USDCHF", "yf": "CHF=X"},
     "AUD/USD": {"tv": "FX:AUDUSD", "yf": "AUDUSD=X"},
@@ -106,88 +100,112 @@ if 'analise' not in st.session_state:
 
 CREDENCIAIS = {"wallace": "admin123", "cliente01": "pro2026"}
 
-# --- 5. COLETOR DE DADOS (CÉREBRO MATEMÁTICO) ---
-def get_technical_data(symbol_key):
-    if not YF_AVAILABLE:
-        return None
-    
+# --- 5. COLETOR DE DADOS "QUEBRA-BLOQUEIO" ---
+def get_data_direct(symbol_key):
+    """
+    Usa requisição HTTP direta com cabeçalhos de navegador para evitar bloqueio.
+    """
     ticker = PAIRS[symbol_key]['yf']
+    # URL da API v8 do Yahoo (Mais estável)
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
     try:
-        # Baixa mais dados para calcular indicadores precisos
-        df = yf.download(ticker, period="5d", interval="1m", progress=False)
-        if not df.empty:
-            df = df.reset_index()
-            df.columns = df.columns.str.lower()
-            if 'datetime' in df.columns: df = df.rename(columns={'datetime': 'timestamp'})
-            if 'date' in df.columns: df = df.rename(columns={'date': 'timestamp'})
-            return df
-    except:
-        pass
+        response = requests.get(url, headers=headers, timeout=5)
+        data = response.json()
+        
+        if 'chart' in data and 'result' in data['chart']:
+            result = data['chart']['result'][0]
+            timestamps = result['timestamp']
+            indicators = result['indicators']['quote'][0]
+            
+            df = pd.DataFrame({
+                'timestamp': pd.to_datetime(timestamps, unit='s'),
+                'open': indicators['open'],
+                'high': indicators['high'],
+                'low': indicators['low'],
+                'close': indicators['close'],
+                'volume': indicators['volume']
+            })
+            
+            # Limpa dados vazios
+            df = df.dropna()
+            return df.tail(60) # Retorna últimas 60 velas
+    except Exception as e:
+        st.error(f"Erro de conexão API: {e}")
+        return None
     return None
 
-# --- 6. ALGORITMO TITAN (LÓGICA DE ALTA PRECISÃO) ---
+# --- 6. CÉREBRO TITAN (LÓGICA HFT DE 1 MINUTO) ---
 def calculate_titan_signal(df):
-    if df is None or len(df) < 50:
-        return "NEUTRO", 50.0, "AGUARDANDO DADOS..."
+    if df is None or len(df) < 20:
+        return "NEUTRO", 50.0, "AGUARDANDO DADOS NUMÉRICOS..."
 
-    # 1. Preparar Dados
+    # Dados da última vela (A que está se mexendo)
     close = df['close'].values
+    high = df['high'].values
+    low = df['low'].values
+    open_ = df['open'].values
     
-    # 2. EMA 50 (Tendência Média)
-    ema50 = pd.Series(close).ewm(span=50, adjust=False).mean().iloc[-1]
+    current_price = close[-1]
     
-    # 3. RSI 14 (Força)
+    # --- INDICADORES ---
+    # 1. EMA 9 (Tendência Rápida)
+    ema9 = pd.Series(close).ewm(span=9, adjust=False).mean().iloc[-1]
+    
+    # 2. RSI 14 (Força Relativa)
     delta = pd.Series(close).diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs)).iloc[-1]
     
-    # 4. Estocástico (Timing de Entrada)
-    low_14 = pd.Series(df['low']).rolling(14).min()
-    high_14 = pd.Series(df['high']).rolling(14).max()
-    k_percent = 100 * ((pd.Series(close) - low_14) / (high_14 - low_14))
-    stoch_k = k_percent.rolling(3).mean().iloc[-1]
-
-    # Preço Atual
-    price = close[-1]
+    # 3. Análise de Pavio (Rejeição)
+    body_size = abs(close[-1] - open_[-1])
+    upper_wick = high[-1] - max(close[-1], open_[-1])
+    lower_wick = min(close[-1], open_[-1]) - low[-1]
     
-    # --- LÓGICA DE CONFLUÊNCIA (OS 3 TEM QUE BATER) ---
+    # --- LÓGICA DE DECISÃO ---
     score = 50.0
     signal = "NEUTRO"
-    motive = "MERCADO INDECISO"
+    motive = "MERCADO LATERAL"
 
-    # COMPRA FORTE (CALL)
-    # Preço acima da média + RSI saudável + Estocástico virando pra cima
-    if price > ema50:
-        if rsi > 50 and rsi < 75:
-            if stoch_k < 80:
+    # CENÁRIO DE COMPRA (CALL)
+    # Preço acima da média E RSI apontando pra cima
+    if current_price > ema9:
+        if rsi > 50 and rsi < 85:
+            # Se não tiver pavio gigante em cima barrando
+            if upper_wick < (body_size * 0.5):
                 score = 94.0
                 signal = "COMPRA"
-                motive = "TITAN: TENDÊNCIA + FORÇA + TIMING ALINHADOS"
+                motive = "FLUXO COMPRADOR CONFIRMADO"
             else:
                 score = 75.0
-                motive = "TENDÊNCIA DE ALTA (MAS ESTICADO)"
-        elif rsi >= 75:
-            score = 88.0
+                motive = "TENDÊNCIA DE ALTA COM REJEIÇÃO"
+        elif rsi >= 85:
+            score = 91.0
             signal = "COMPRA"
-            motive = "MOMENTUM DE ALTA FORTE"
+            motive = "MOMENTUM FORTE (ALTA)"
 
-    # VENDA FORTE (PUT)
-    # Preço abaixo da média + RSI caindo + Estocástico virando pra baixo
-    elif price < ema50:
-        if rsi < 50 and rsi > 25:
-            if stoch_k > 20:
+    # CENÁRIO DE VENDA (PUT)
+    # Preço abaixo da média E RSI apontando pra baixo
+    elif current_price < ema9:
+        if rsi < 50 and rsi > 15:
+            # Se não tiver pavio gigante em baixo barrando
+            if lower_wick < (body_size * 0.5):
                 score = 94.0
                 signal = "VENDA"
-                motive = "TITAN: TENDÊNCIA + FORÇA + TIMING ALINHADOS"
+                motive = "FLUXO VENDEDOR CONFIRMADO"
             else:
                 score = 75.0
-                motive = "TENDÊNCIA DE BAIXA (MAS ESTICADO)"
-        elif rsi <= 25:
-            score = 88.0
+                motive = "TENDÊNCIA DE BAIXA COM REJEIÇÃO"
+        elif rsi <= 15:
+            score = 91.0
             signal = "VENDA"
-            motive = "MOMENTUM DE BAIXA FORTE"
+            motive = "MOMENTUM FORTE (BAIXA)"
 
     return signal, score, motive
 
@@ -239,7 +257,9 @@ def tela_dashboard():
         st.markdown("<h4 style='color: #00ff88 !important; margin-bottom: 10px;'>IA TITAN</h4>", unsafe_allow_html=True)
         if st.button("ANALISAR AGORA"):
             with st.spinner("PROCESSANDO ALGORITMO..."):
-                df = get_technical_data(ativo)
+                # Busca dados matemáticos
+                df = get_data_direct(ativo)
+                # Calcula sinal
                 sig, score, motive = calculate_titan_signal(df)
                 st.session_state['analise'] = {'ativo': ativo, 'sig': sig, 'score': score, 'motive': motive}
     st.markdown("</div>", unsafe_allow_html=True)
@@ -247,14 +267,15 @@ def tela_dashboard():
     # Área Principal
     col_grafico, col_dados = st.columns([2.5, 1.5])
     
-    # 1. GRÁFICO TRADINGVIEW (VISUAL PERFEITO)
+    # 1. GRÁFICO TRADINGVIEW (VISUAL PERFEITO - IDENTICO AO VEX)
     with col_grafico:
         st.markdown(f"<h3 style='font-family: Orbitron; color: white;'>MERCADO REAL | {ativo}</h3>", unsafe_allow_html=True)
         
         # Símbolo para o TradingView
         tv_symbol = PAIRS[ativo]['tv']
         
-        # HTML do Widget Oficial do TradingView
+        # Widget Oficial do TradingView (HTML/JS)
+        # Isso garante que o usuário veja exatamente o mesmo gráfico da corretora
         html_code = f"""
         <div class="tradingview-widget-container">
           <div id="tradingview_chart"></div>
