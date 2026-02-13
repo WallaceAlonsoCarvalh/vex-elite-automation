@@ -2,106 +2,97 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import requests
 import datetime
-import time # <--- A CORREÇÃO ESTÁ AQUI (Faltava essa biblioteca)
+import time 
+import random
 
-# --- 1. CONFIGURAÇÃO DA PÁGINA (TOPO) ---
+# --- TENTATIVA DE IMPORTAR YFINANCE (PADRÃO OURO PARA FOREX) ---
+try:
+    import yfinance as yf
+    DATA_SOURCE = "YFINANCE"
+except ImportError:
+    DATA_SOURCE = "SIMULATION"
+
+# --- 1. CONFIGURAÇÃO (FOREX MODE) ---
 st.set_page_config(
-    page_title="VEX ELITE | FLOW TERMINAL",
+    page_title="VEX ELITE | FOREX TERMINAL",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS (VISUAL PRETO/VERDE CORRIGIDO) ---
+# --- 2. CSS (VISUAL DARK NEON CORRIGIDO) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap');
     
-    /* Fundo Geral */
     .stApp {
         background-color: #050505;
-        background-image: 
-            radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
-            radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
-            radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
-        color: #ffffff;
+        background-image: radial-gradient(at 50% 0%, #1a1a2e 0%, #000000 100%);
+        color: white;
     }
     
-    /* Fontes */
-    h1, h2, h3, h4, h5, h6, p, label, span, div {
-        font-family: 'Rajdhani', sans-serif !important;
-    }
+    h1, h2, h3, p, div, span { font-family: 'Rajdhani', sans-serif !important; }
     
-    /* --- MENU DROPDOWN --- */
+    /* MENU DROPDOWN (CORRIGIDO PARA VISIBILIDADE TOTAL) */
     .stSelectbox > div > div {
         background-color: #000000 !important;
         color: #00ff88 !important;
         border: 1px solid #333 !important;
     }
-    div[data-testid="stSelectboxVirtualDropdown"] {
+    div[data-baseweb="popover"], div[data-baseweb="menu"], ul[role="listbox"] {
         background-color: #000000 !important;
-    }
-    div[role="listbox"] ul {
-        background-color: #000000 !important;
+        border: 1px solid #00ff88 !important;
     }
     li[role="option"] {
         background-color: #000000 !important;
-        color: #ffffff !important;
+        color: white !important;
     }
-    li[role="option"]:hover, li[role="option"][aria-selected="true"] {
+    li[role="option"]:hover {
         background-color: #00ff88 !important;
-        color: #000000 !important;
+        color: black !important;
+        font-weight: bold;
     }
     .stSelectbox svg { fill: #00ff88 !important; }
     
-    /* --- INPUTS --- */
-    .stTextInput > div > div > input {
-        background-color: #111 !important;
-        color: #00ff88 !important;
-        border: 1px solid #333 !important;
-        border-radius: 8px;
-        text-align: center;
-    }
-    
-    /* --- BOTÕES --- */
+    /* BOTÕES */
     .stButton > button {
         background: transparent !important;
         border: 1px solid #00ff88 !important;
         color: #00ff88 !important;
         font-family: 'Orbitron', sans-serif;
-        text-transform: uppercase;
         font-weight: 900;
+        text-transform: uppercase;
         padding: 20px;
-        border-radius: 0px;
-        transition: all 0.3s ease;
+        transition: 0.3s;
         box-shadow: 0 0 10px rgba(0, 255, 136, 0.1);
-        width: 100%;
     }
     .stButton > button:hover {
         background: #00ff88 !important;
-        color: #000 !important;
+        color: black !important;
         box-shadow: 0 0 30px rgba(0, 255, 136, 0.6);
-        transform: scale(1.02);
+    }
+
+    /* INPUTS */
+    .stTextInput input {
+        background-color: #111 !important;
+        color: #00ff88 !important;
+        border: 1px solid #333 !important;
+        text-align: center;
     }
     
-    /* CARDS */
     .neon-card {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 25px;
+        background: rgba(255,255,255,0.02);
+        border: 1px solid #333;
+        padding: 20px;
         border-radius: 10px;
-        backdrop-filter: blur(10px);
-        margin-bottom: 20px;
+        margin-bottom: 15px;
     }
     
     .score-glow {
-        font-size: 6rem;
-        font-family: 'Orbitron', sans-serif;
+        font-family: 'Orbitron';
+        font-size: 5rem;
         font-weight: 900;
-        text-shadow: 0 0 40px currentColor;
-        line-height: 1;
-        margin: 20px 0;
+        text-shadow: 0 0 30px currentColor;
     }
     
     #MainMenu {visibility: hidden;}
@@ -110,249 +101,255 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. GERENCIAMENTO DE SESSÃO E USUÁRIOS ---
+# --- 3. ESTADO DA SESSÃO ---
 if 'logado' not in st.session_state:
     st.session_state['logado'] = False
-if 'analise_ativa' not in st.session_state:
-    st.session_state['analise_ativa'] = None
+if 'analise_forex' not in st.session_state:
+    st.session_state['analise_forex'] = None
 
-# Credenciais
-if 'CREDENCIAIS' not in st.session_state:
-    st.session_state['CREDENCIAIS'] = {
-        "wallace": "admin123",  
-        "cliente01": "pro2026", 
+# CREDENCIAIS FIXAS
+CREDENCIAIS = {
+    "wallace": "admin123",
+    "cliente01": "pro2026"
+}
+
+# --- 4. COLETOR DE DADOS FOREX ---
+def get_forex_data(pair):
+    """
+    Busca dados de Forex.
+    Mapeia: EUR/USD -> EURUSD=X (Padrão Yahoo)
+    """
+    symbol_map = {
+        "EUR/USD": "EURUSD=X",
+        "GBP/USD": "GBPUSD=X",
+        "USD/JPY": "JPY=X",
+        "USD/BRL": "BRL=X",
+        "EUR/JPY": "EURJPY=X",
+        "GBP/JPY": "GBPJPY=X",
+        "AUD/USD": "AUDUSD=X",
+        "USD/CAD": "CAD=X"
     }
-
-# --- 4. GERADOR DE DADOS SINTÉTICOS (MODO DE SEGURANÇA) ---
-def generate_synthetic_data(symbol):
-    """
-    Gera uma vela matemática se a internet falhar.
-    Isso evita o erro vermelho quando a corretora bloqueia o IP.
-    """
-    # Preço base aproximado
-    base = 96000 if 'BTC' in symbol else 2600 if 'ETH' in symbol else 600 if 'BNB' in symbol else 100
     
-    # Gera 60 velas de histórico
+    ticker = symbol_map.get(pair, "EURUSD=X")
+    
+    # MODO REAL (YFINANCE)
+    if DATA_SOURCE == "YFINANCE":
+        try:
+            # Tenta baixar dados reais
+            df = yf.download(ticker, period="1d", interval="1m", progress=False)
+            if not df.empty:
+                df = df.reset_index()
+                # Padronizar colunas
+                df.columns = df.columns.str.lower()
+                if 'datetime' in df.columns: df = df.rename(columns={'datetime': 'timestamp'})
+                if 'date' in df.columns: df = df.rename(columns={'date': 'timestamp'})
+                # Garante fuso horário local aproximado
+                df['timestamp'] = df['timestamp'].dt.tz_localize(None) 
+                return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']], "MERCADO REAL (ONLINE)"
+        exceptException:
+            pass # Falhou, vai pro simulador
+
+    # MODO SIMULAÇÃO (PREVINE ERROS VERMELHOS)
+    # Gera um gráfico matemático realista para não travar o app se a API falhar
     dates = pd.date_range(end=datetime.datetime.now(), periods=60, freq='1min')
+    base_price = 1.0800 if "EUR" in pair else 150.00 if "JPY" in pair else 1.2600
     
-    # Seed baseada no tempo (agora com import time funcionando!)
-    np.random.seed(int(time.time())) 
+    np.random.seed(int(time.time()))
+    returns = np.random.normal(0, 0.0002, 60)
+    price = base_price * (1 + returns).cumprod()
     
-    # Caminho aleatório (Random Walk)
-    returns = np.random.normal(loc=0.0001, scale=0.002, size=60)
-    price_path = base * (1 + returns).cumprod()
-    
-    # Monta o DataFrame
-    df = pd.DataFrame(index=dates)
-    df['timestamp'] = dates
-    df['close'] = price_path
-    df['open'] = df['close'].shift(1).fillna(base)
-    # High e Low baseados no Open/Close
-    df['high'] = df[['open', 'close']].max(axis=1) * (1 + np.random.uniform(0, 0.001, 60))
-    df['low'] = df[['open', 'close']].min(axis=1) * (1 - np.random.uniform(0, 0.001, 60))
-    df['volume'] = np.random.randint(100, 5000, size=60)
-    
-    return df
+    df = pd.DataFrame({
+        'timestamp': dates,
+        'open': price,
+        'close': price * (1 + np.random.normal(0, 0.0001, 60)),
+        'high': price * 1.0002,
+        'low': price * 0.9998,
+        'volume': np.random.randint(100, 1000, 60)
+    })
+    return df, "SIMULAÇÃO (CONEXÃO INSTÁVEL)"
 
-# --- 5. COLETOR DE DADOS REAL (COM FALLBACK PARA SINTÉTICO) ---
-def get_universal_data(symbol):
-    clean_symbol = symbol.replace("/", "").upper()
-    
-    # 1. TENTA BYBIT
-    try:
-        url = f"https://api.bybit.com/v5/market/kline?category=spot&symbol={clean_symbol}&interval=1&limit=60"
-        response = requests.get(url, timeout=2)
-        data = response.json()
-        if 'result' in data and 'list' in data['result']:
-            df = pd.DataFrame(data['result']['list'], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
-            df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].astype(float)
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df = df.sort_values('timestamp')
-            return df, "ONLINE (BYBIT)"
-    except: pass
-
-    # 2. TENTA BINANCE
-    try:
-        url = f"https://api.binance.com/api/v3/klines?symbol={clean_symbol}&interval=1m&limit=60"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=2)
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, list):
-                df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'x', 'x', 'x', 'x', 'x', 'x'])
-                df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].astype(float)
-                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-                return df, "ONLINE (BINANCE)"
-    except: pass
-
-    # 3. MODO DE SEGURANÇA (SINTÉTICO)
-    # Se tudo falhar, usa matemática para não travar o app
-    return generate_synthetic_data(symbol), "SIMULAÇÃO (CONEXÃO INSTÁVEL)"
-
-# --- 6. INTELIGÊNCIA DE FLUXO (TREND FOLLOWER - 82%+) ---
-def analyze_trend_flow(df):
+# --- 5. CÉREBRO VEX-FOREX (LÓGICA DE PIPS) ---
+def analyze_forex_logic(df):
     if df is None or df.empty:
-        return "NEUTRO", 0.0, "ERRO: SEM DADOS"
+        return "NEUTRO", 0.0, "SEM DADOS"
 
+    # Preparação
     close = df['close'].values
     open_ = df['open'].values
     high = df['high'].values
     low = df['low'].values
     
-    # Vela Atual
     c_now = close[-1]
     o_now = open_[-1]
     
-    body_size = abs(c_now - o_now)
-    total_size = high[-1] - low[-1]
-    upper_wick = high[-1] - max(c_now, o_now)
-    lower_wick = min(c_now, o_now) - low[-1]
+    # Tamanho em Pontos (Forex é sutil)
+    body = abs(c_now - o_now)
+    total_range = high[-1] - low[-1]
     
-    # Indicadores
+    # Médias (Tendência)
     ema9 = pd.Series(close).ewm(span=9).mean().iloc[-1]
     
-    # RSI
-    rsi_period = 14
+    # RSI (Força)
     delta = pd.Series(close).diff()
-    gain = (delta.where(delta > 0, 0)).rolling(rsi_period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(rsi_period).mean()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs)).iloc[-1]
     rsi = 50 if np.isnan(rsi) else rsi
     
     score = 0.0
     signal = "NEUTRO"
-    motive = "ANALISANDO FLUXO..."
+    motive = "ANALISANDO..."
 
-    # LÓGICA DE FLUXO (V7.0 MANTIDA)
-    # Compra
-    if c_now > ema9 and c_now > o_now:
-        if body_size > (total_size * 0.5):
-            if upper_wick < (body_size * 0.4):
-                if rsi > 50 and rsi < 88:
-                    score = 96.5; signal = "COMPRA"; motive = "FLUXO: VELA DE FORÇA (M1)"
-                elif rsi >= 88:
-                    score = 93.0; signal = "COMPRA"; motive = "FLUXO: MOMENTUM EXPLOSIVO"
+    # --- LÓGICA DE FLUXO FOREX ---
+    # Forex respeita muito tendência de curto prazo (M1)
+    
+    # COMPRA (CALL)
+    if c_now > ema9 and c_now > o_now: # Acima da média + Vela Verde
+        # Se o corpo for saudável (> 50% da vela)
+        if body > (total_range * 0.5):
+            if rsi > 45 and rsi < 80: # RSI saudável
+                score = 95.0
+                signal = "COMPRA"
+                motive = "FOREX: FLUXO DE ALTA (MOMENTUM)"
+            elif rsi >= 80:
+                score = 91.0
+                signal = "COMPRA"
+                motive = "FOREX: FORÇA EXTREMA DE COMPRA"
 
-    # Venda
-    elif c_now < ema9 and c_now < o_now:
-        if body_size > (total_size * 0.5):
-            if lower_wick < (body_size * 0.4):
-                if rsi < 50 and rsi > 12:
-                    score = 96.5; signal = "VENDA"; motive = "FLUXO: VELA DE FORÇA (M1)"
-                elif rsi <= 12:
-                    score = 93.0; signal = "VENDA"; motive = "FLUXO: MOMENTUM EXPLOSIVO"
+    # VENDA (PUT)
+    elif c_now < ema9 and c_now < o_now: # Abaixo da média + Vela Vermelha
+        if body > (total_range * 0.5):
+            if rsi < 55 and rsi > 20: # RSI saudável
+                score = 95.0
+                signal = "VENDA"
+                motive = "FOREX: FLUXO DE BAIXA (MOMENTUM)"
+            elif rsi <= 20:
+                score = 91.0
+                signal = "VENDA"
+                motive = "FOREX: FORÇA EXTREMA DE VENDA"
 
-    if total_size == 0 or body_size < (total_size * 0.2):
-        score = 20.0; signal = "NEUTRO"; motive = "MERCADO LENTO (SEM VOLUME)"
+    # Falsos Rompimentos (Pavio Grande)
+    upper_wick = high[-1] - max(c_now, o_now)
+    lower_wick = min(c_now, o_now) - low[-1]
+    
+    if upper_wick > (body * 2): # Pavio superior 2x maior que corpo
+        score = 88.0
+        signal = "VENDA"
+        motive = "REJEIÇÃO DE TOPO (PAVIO)"
+        
+    if lower_wick > (body * 2): # Pavio inferior 2x maior que corpo
+        score = 88.0
+        signal = "COMPRA"
+        motive = "REJEIÇÃO DE FUNDO (PAVIO)"
+
+    # Trava de Segurança
+    if total_range == 0:
+        score = 0.0
+        signal = "NEUTRO"
+        motive = "MERCADO PARADO"
 
     return signal, score, motive
 
-# --- 7. TELAS ---
+# --- 6. TELAS ---
 def tela_login():
     st.markdown("<br><br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.2, 1])
-    with col2:
+    c1, c2, c3 = st.columns([1, 1.2, 1])
+    with c2:
         st.markdown("""
             <div style="text-align: center; border: 1px solid #00ff88; padding: 40px; background: #000; box-shadow: 0 0 20px rgba(0,255,136,0.2);">
-                <h1 style="font-family: 'Orbitron'; font-size: 3rem; margin-bottom: 0; color: #00ff88 !important; text-shadow: 0 0 10px #00ff88;">VEX ELITE</h1>
-                <p style="letter-spacing: 5px; color: white; font-size: 0.8rem; margin-bottom: 30px;">SYSTEM ACCESS v10.1</p>
+                <h1 style="font-family: 'Orbitron'; font-size: 3rem; margin-bottom: 0; color: #00ff88 !important;">VEX ELITE</h1>
+                <p style="letter-spacing: 5px; color: white; font-size: 0.8rem; margin-bottom: 30px;">FOREX ACCESS</p>
             </div>
         """, unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
-        usuario = st.text_input("ID", placeholder="IDENTIFICAÇÃO", label_visibility="collapsed")
-        st.markdown("<div style='height: 10px'></div>", unsafe_allow_html=True)
-        senha = st.text_input("KEY", type="password", placeholder="CHAVE DE ACESSO", label_visibility="collapsed")
-        st.markdown("<br>", unsafe_allow_html=True)
         
-        if st.button("INICIAR PROTOCOLO"):
-            creds = st.session_state['CREDENCIAIS']
-            if usuario in creds and senha == creds[usuario]:
+        user = st.text_input("ID", placeholder="USUÁRIO", label_visibility="collapsed")
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        pwd = st.text_input("KEY", type="password", placeholder="SENHA", label_visibility="collapsed")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("ACESSAR SISTEMA"):
+            if user in CREDENCIAIS and pwd == CREDENCIAIS[user]:
                 st.session_state['logado'] = True
                 st.rerun()
             else:
-                st.error("ACESSO NEGADO.")
+                st.error("DADOS INVÁLIDOS")
 
 def tela_dashboard():
     # Header
     st.markdown("""
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
-            <div><span style="font-family: 'Orbitron'; font-size: 1.5rem; color: #00ff88 !important;">VEX ELITE</span></div>
-            <div><span style="background: #00ff88; color: black !important; padding: 2px 8px; font-weight: bold;">ONLINE</span></div>
+            <div><span style="font-family: 'Orbitron'; font-size: 1.5rem; color: #00ff88 !important;">VEX ELITE</span> <span style="color:#aaa; font-size:0.8rem;">| FOREX TERMINAL</span></div>
+            <div><span style="background: #00ff88; color: black !important; padding: 2px 8px; font-weight: bold;">CONECTADO</span></div>
         </div>
     """, unsafe_allow_html=True)
     
-    # Controle
+    # Controles
     st.markdown("<div class='neon-card'>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([2, 1, 2])
+    c1, c2 = st.columns([3, 1])
     with c1:
-        st.markdown("<h4 style='color: #00ff88 !important;'>ATIVO ALVO</h4>", unsafe_allow_html=True)
-        ativo = st.selectbox("", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"], label_visibility="collapsed")
-    with c3:
-        st.markdown("<h4 style='color: #00ff88 !important;'>AÇÃO</h4>", unsafe_allow_html=True)
-        # O botão atualiza o estado
-        if st.button("ANALISAR FLUXO (M1)"):
-            with st.spinner(f"VARRENDO DADOS DE {ativo}..."):
-                # Pega dados (Reais ou Sintéticos se falhar)
-                df, status_msg = get_universal_data(ativo)
-                
-                # Analisa
-                sig, precisao, motive = analyze_trend_flow(df)
-                
-                # Salva
-                st.session_state['analise_ativa'] = {
-                    'df': df, 'sig': sig, 'precisao': precisao, 
-                    'motive': motive, 'ativo': ativo,
-                    'status': status_msg,
-                    'time': datetime.datetime.now().strftime("%H:%M:%S")
+        st.markdown("<h4 style='color: #00ff88;'>PAR DE MOEDAS</h4>", unsafe_allow_html=True)
+        ativo = st.selectbox("", ["EUR/USD", "GBP/USD", "USD/JPY", "USD/BRL", "EUR/JPY", "GBP/JPY", "AUD/USD", "USD/CAD"], label_visibility="collapsed")
+    with c2:
+        st.markdown("<h4 style='color: #00ff88;'>EXECUÇÃO</h4>", unsafe_allow_html=True)
+        if st.button("ANALISAR AGORA"):
+            with st.spinner("CALCULANDO PIPS E TENDÊNCIA..."):
+                df, status = get_forex_data(ativo)
+                sig, score, motive = analyze_forex_logic(df)
+                st.session_state['analise_forex'] = {
+                    'df': df, 'sig': sig, 'score': score, 'motive': motive, 'ativo': ativo, 'status': status,
+                    'hora': datetime.datetime.now().strftime("%H:%M:%S")
                 }
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Resultado
-    if st.session_state['analise_ativa']:
-        dados = st.session_state['analise_ativa']
+    # Resultados
+    if st.session_state['analise_forex']:
+        res = st.session_state['analise_forex']
         
-        if dados['ativo'] != ativo:
-            st.warning(f"⚠️ Mostrando dados anteriores de {dados['ativo']}. Clique no botão para atualizar.")
+        # Alerta se mudou o ativo sem clicar
+        if res['ativo'] != ativo:
+            st.info(f"Clique em ANALISAR AGORA para atualizar de {res['ativo']} para {ativo}.")
         
-        col_grafico, col_dados = st.columns([2.5, 1.5])
+        g_col, d_col = st.columns([2, 1])
         
-        with col_grafico:
+        with g_col:
             st.markdown("<div class='neon-card'>", unsafe_allow_html=True)
-            st.markdown(f"<div style='display:flex; justify-content:space-between;'><h3>GRÁFICO {dados['ativo']}</h3> <span style='color:#aaa'>{dados['status']}</span></div>", unsafe_allow_html=True)
-            fig = go.Figure(data=[go.Candlestick(x=dados['df']['timestamp'], open=dados['df']['open'], high=dados['df']['high'], low=dados['df']['low'], close=dados['df']['close'], increasing_line_color='#00ff88', decreasing_line_color='#ff0055')])
-            fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=30, b=10), font=dict(family="Rajdhani", color="white"))
+            st.markdown(f"<div style='display:flex; justify-content:space-between'><h3>GRÁFICO {res['ativo']}</h3> <span style='color:#aaa; font-size:0.8rem'>{res['status']} | {res['hora']}</span></div>", unsafe_allow_html=True)
+            
+            fig = go.Figure(data=[go.Candlestick(x=res['df']['timestamp'], open=res['df']['open'], high=res['df']['high'], low=res['df']['low'], close=res['df']['close'], increasing_line_color='#00ff88', decreasing_line_color='#ff0055')])
+            fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=30, b=10))
             st.plotly_chart(fig, use_container_width=True)
             st.markdown("</div>", unsafe_allow_html=True)
-        
-        with col_dados:
-            st.markdown("<div class='neon-card' style='text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;'>", unsafe_allow_html=True)
-            st.markdown("<p style='color: #aaa !important;'>FORÇA DA TENDÊNCIA</p>", unsafe_allow_html=True)
             
-            cor_score = "#00ff88" if dados['precisao'] >= 92 else "#ffcc00"
-            if dados['precisao'] < 60: cor_score = "#ff0055"
-
-            st.markdown(f"<div class='score-glow' style='color: {cor_score} !important;'>{dados['precisao']:.1f}%</div>", unsafe_allow_html=True)
+        with d_col:
+            st.markdown("<div class='neon-card' style='text-align:center; height:100%; display:flex; flex-direction:column; justify-content:center;'>", unsafe_allow_html=True)
+            st.markdown("<p style='color:#aaa'>FORÇA DA TENDÊNCIA</p>", unsafe_allow_html=True)
             
-            if dados['precisao'] >= 92: 
-                acao_texto = "COMPRA" if dados['sig'] == "COMPRA" else "VENDA"
-                cor_bg = "linear-gradient(45deg, #00ff88, #00cc6a)" if dados['sig'] == "COMPRA" else "linear-gradient(45deg, #ff0055, #cc0044)"
-                st.markdown(f"<div style='background: {cor_bg}; padding: 15px; border-radius: 5px; margin: 10px 0; box-shadow: 0 0 20px {cor_score};'><h1 style='margin:0; font-size: 2.5rem; color: black !important; font-weight: 900;'>{acao_texto}</h1></div>", unsafe_allow_html=True)
-                st.markdown(f"<div style='border: 1px solid #333; padding: 10px; margin-top: 10px;'><span style='color: #00ff88 !important;'>MOTIVO:</span> {dados['motive']}</div>", unsafe_allow_html=True)
-                st.markdown("<p style='margin-top: 15px; color: white !important; font-weight: bold; animation: pulse 1s infinite;'>SIGA O FLUXO IMEDIATAMENTE</p>", unsafe_allow_html=True)
+            cor = "#00ff88" if res['score'] >= 90 else "#ffcc00"
+            if res['score'] < 60: cor = "#ff0055"
+            
+            st.markdown(f"<div class='score-glow' style='color:{cor} !important'>{res['score']:.1f}%</div>", unsafe_allow_html=True)
+            
+            if res['score'] >= 90:
+                sinal = res['sig']
+                bg = "linear-gradient(45deg, #00ff88, #00cc6a)" if sinal == "COMPRA" else "linear-gradient(45deg, #ff0055, #cc0044)"
+                st.markdown(f"<div style='background:{bg}; padding:15px; border-radius:5px; margin:10px 0; color:black; font-weight:900; font-size:2rem;'>{sinal}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='border:1px solid #333; padding:10px; margin-top:10px;'><span style='color:#00ff88'>MOTIVO:</span> {res['motive']}</div>", unsafe_allow_html=True)
+                st.markdown("<p style='margin-top:10px; font-weight:bold; animation: pulse 1s infinite;'>ENTRADA CONFIRMADA</p>", unsafe_allow_html=True)
             else:
-                st.markdown("<div style='border: 2px solid #ff0055; padding: 15px; margin: 10px 0; color: #ff0055;'><h2 style='margin:0; color: #ff0055 !important;'>NÃO ENTRAR</h2></div>", unsafe_allow_html=True)
-                st.markdown(f"<p style='color: #aaa !important;'>Cenário: {dados['motive']}</p>", unsafe_allow_html=True)
-            
-            st.markdown(f"<div style='margin-top: auto; padding-top: 20px; font-size: 1.5rem;'>${dados['df']['close'].iloc[-1]:.2f}</div>", unsafe_allow_html=True)
+                st.markdown("<div style='border:1px solid #ffcc00; color:#ffcc00; padding:10px; margin:10px 0; font-weight:bold;'>AGUARDE</div>", unsafe_allow_html=True)
+                st.markdown(f"<p style='font-size:0.8rem; color:#aaa'>{res['motive']}</p>", unsafe_allow_html=True)
+                
+            st.markdown(f"<div style='margin-top:auto; font-size:1.5rem; padding-top:20px;'>{res['df']['close'].iloc[-1]:.5f}</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    if st.button("ENCERRAR SESSÃO"):
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    if st.button("SAIR"):
         st.session_state['logado'] = False
         st.rerun()
 
-# --- 7. EXECUÇÃO ---
+# --- 7. START ---
 if st.session_state['logado']:
     tela_dashboard()
 else:
