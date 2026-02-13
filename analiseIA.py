@@ -7,6 +7,7 @@ import time
 import random
 
 # --- TENTATIVA DE IMPORTAR YFINANCE (PADRÃO OURO PARA FOREX) ---
+# Se não tiver instalado, o sistema usa o modo Simulação automaticamente sem erro.
 try:
     import yfinance as yf
     DATA_SOURCE = "YFINANCE"
@@ -47,7 +48,7 @@ st.markdown("""
         background-color: #000000 !important;
         color: white !important;
     }
-    li[role="option"]:hover {
+    li[role="option"]:hover, li[role="option"][aria-selected="true"] {
         background-color: #00ff88 !important;
         color: black !important;
         font-weight: bold;
@@ -65,11 +66,13 @@ st.markdown("""
         padding: 20px;
         transition: 0.3s;
         box-shadow: 0 0 10px rgba(0, 255, 136, 0.1);
+        width: 100%;
     }
     .stButton > button:hover {
         background: #00ff88 !important;
         color: black !important;
         box-shadow: 0 0 30px rgba(0, 255, 136, 0.6);
+        transform: scale(1.02);
     }
 
     /* INPUTS */
@@ -144,9 +147,9 @@ def get_forex_data(pair):
                 if 'datetime' in df.columns: df = df.rename(columns={'datetime': 'timestamp'})
                 if 'date' in df.columns: df = df.rename(columns={'date': 'timestamp'})
                 # Garante fuso horário local aproximado
-                df['timestamp'] = df['timestamp'].dt.tz_localize(None) 
+                # df['timestamp'] = df['timestamp'].dt.tz_localize(None) 
                 return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']], "MERCADO REAL (ONLINE)"
-        exceptException:
+        except Exception: # <--- CORREÇÃO AQUI (O erro estava na falta de espaço)
             pass # Falhou, vai pro simulador
 
     # MODO SIMULAÇÃO (PREVINE ERROS VERMELHOS)
@@ -315,7 +318,7 @@ def tela_dashboard():
         
         with g_col:
             st.markdown("<div class='neon-card'>", unsafe_allow_html=True)
-            st.markdown(f"<div style='display:flex; justify-content:space-between'><h3>GRÁFICO {res['ativo']}</h3> <span style='color:#aaa; font-size:0.8rem'>{res['status']} | {res['hora']}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='display:flex; justify-content:space-between;'><h3>GRÁFICO {res['ativo']}</h3> <span style='color:#aaa; font-size:0.8rem'>{res['status']} | {res['hora']}</span></div>", unsafe_allow_html=True)
             
             fig = go.Figure(data=[go.Candlestick(x=res['df']['timestamp'], open=res['df']['open'], high=res['df']['high'], low=res['df']['low'], close=res['df']['close'], increasing_line_color='#00ff88', decreasing_line_color='#ff0055')])
             fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=30, b=10))
