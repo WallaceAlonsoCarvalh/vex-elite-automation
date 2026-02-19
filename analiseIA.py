@@ -8,7 +8,7 @@ import streamlit.components.v1 as components
 
 # --- 1. CONFIGURAÇÃO ---
 st.set_page_config(
-    page_title="VEX ELITE | SPEED TITAN",
+    page_title="VEX ELITE | GLOBAL TITAN",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -83,8 +83,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. MAPEAMENTO ---
+# --- 3. MAPEAMENTO (FOREX E CRIPTO) ---
+# Adicionado suporte robusto para criptomoedas padrão
 PAIRS = {
+    # FOREX
     "EUR/USD": {"tv": "FX:EURUSD", "yf": "EURUSD=X"},
     "GBP/USD": {"tv": "FX:GBPUSD", "yf": "GBPUSD=X"},
     "USD/JPY": {"tv": "FX:USDJPY", "yf": "JPY=X"},
@@ -92,6 +94,13 @@ PAIRS = {
     "AUD/USD": {"tv": "FX:AUDUSD", "yf": "AUDUSD=X"},
     "USD/CAD": {"tv": "FX:USDCAD", "yf": "CAD=X"},
     "EUR/JPY": {"tv": "FX:EURJPY", "yf": "EURJPY=X"},
+    
+    # CRIPTO (CRYPTON)
+    "BTC/USDT": {"tv": "BINANCE:BTCUSDT", "yf": "BTC-USD"},
+    "ETH/USDT": {"tv": "BINANCE:ETHUSDT", "yf": "ETH-USD"},
+    "BNB/USDT": {"tv": "BINANCE:BNBUSDT", "yf": "BNB-USD"},
+    "SOL/USDT": {"tv": "BINANCE:SOLUSDT", "yf": "SOL-USD"},
+    "XRP/USDT": {"tv": "BINANCE:XRPUSDT", "yf": "XRP-USD"},
 }
 
 # --- 4. SESSÃO ---
@@ -106,10 +115,9 @@ CREDENCIAIS = {"wallace": "admin123", "cliente01": "pro2026"}
 def get_data_fast(symbol_key):
     """
     Usa a API Query1 do Yahoo (JSON leve) para baixar dados instantaneamente.
-    Pega apenas o necessário para não travar.
+    Pega apenas o necessário para não travar. Funciona para Cripto e Forex.
     """
     ticker = PAIRS[symbol_key]['yf']
-    # Range curto (1d) para resposta rápida
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
     
     headers = {
@@ -117,7 +125,7 @@ def get_data_fast(symbol_key):
     }
     
     try:
-        response = requests.get(url, headers=headers, timeout=3) # Timeout curto para não ficar pensando
+        response = requests.get(url, headers=headers, timeout=3)
         data = response.json()
         
         if 'chart' in data and 'result' in data['chart']:
@@ -177,39 +185,37 @@ def calculate_titan_speed(df):
     # --- LÓGICA HÍBRIDA (TENDÊNCIA + REVERSÃO) ---
     
     # CENÁRIO 1: FORÇA COMPRADORA (FLUXO)
-    # Preço acima da média E RSI forte (mas não extremo)
     if price > ema9:
         if rsi > 50 and rsi < 80:
-            score = 93.0
+            score = 94.0
             signal = "COMPRA"
             motive = "TITAN: FLUXO DE ALTA LIMPO"
         elif price > upper_bb and rsi > 70: 
             # Estourou a banda com força (Momentum)
-            score = 88.0
+            score = 91.0
             signal = "COMPRA"
             motive = "TITAN: EXPLOSÃO DE ALTA (MOMENTUM)"
             
     # CENÁRIO 2: FORÇA VENDEDORA (FLUXO)
     elif price < ema9:
         if rsi < 50 and rsi > 20:
-            score = 93.0
+            score = 94.0
             signal = "VENDA"
             motive = "TITAN: FLUXO DE BAIXA LIMPO"
         elif price < lower_bb and rsi < 30:
             # Estourou banda pra baixo
-            score = 88.0
+            score = 91.0
             signal = "VENDA"
             motive = "TITAN: EXPLOSÃO DE BAIXA (MOMENTUM)"
 
-    # CENÁRIO 3: REVERSÃO EM BANDA (LATERALIZAÇÃO)
-    # Se RSI estiver extremo e preço tocou na banda, pode reverter
+    # CENÁRIO 3: REVERSÃO EM BANDA (LATERALIZAÇÃO EXTREMA)
     if rsi > 85 and price >= upper_bb:
-        score = 85.0
+        score = 88.0
         signal = "VENDA"
         motive = "TITAN: EXAUSTÃO DE COMPRA (REVERSÃO)"
     
     if rsi < 15 and price <= lower_bb:
-        score = 85.0
+        score = 88.0
         signal = "COMPRA"
         motive = "TITAN: EXAUSTÃO DE VENDA (REVERSÃO)"
 
@@ -223,7 +229,7 @@ def tela_login():
         st.markdown("""
             <div style="text-align: center; border: 2px solid #00ff88; padding: 40px; background: #000; box-shadow: 0 0 30px rgba(0,255,136,0.15);">
                 <h1 style="font-family: 'Orbitron'; font-size: 3rem; margin-bottom: 0; color: #00ff88 !important;">VEX ELITE</h1>
-                <p style="letter-spacing: 4px; color: white; font-size: 0.9rem; margin-bottom: 30px; font-weight: bold;">TITAN SPEED ACCESS</p>
+                <p style="letter-spacing: 4px; color: white; font-size: 0.9rem; margin-bottom: 30px; font-weight: bold;">GLOBAL TITAN ACCESS</p>
             </div>
         """, unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
@@ -248,7 +254,7 @@ def tela_dashboard():
                 <span style="font-family: 'Orbitron'; font-size: 2rem; color: #00ff88 !important; font-weight: 900;">VEX ELITE</span>
             </div>
             <div style="text-align: right;">
-                <span style="background: #00ff88; color: black; padding: 3px 12px; font-weight: 900;">ONLINE (V17.0)</span>
+                <span style="background: #00ff88; color: black; padding: 3px 12px; font-weight: 900;">ONLINE (V18.0)</span>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -257,11 +263,10 @@ def tela_dashboard():
     st.markdown("<div class='neon-card'>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([2, 1, 2])
     with c1:
-        st.markdown("<h4 style='color: #00ff88 !important; margin-bottom: 10px;'>PAR FOREX</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='color: #00ff88 !important; margin-bottom: 10px;'>PAR (FOREX / CRIPTO)</h4>", unsafe_allow_html=True)
         ativo = st.selectbox("", list(PAIRS.keys()), label_visibility="collapsed")
     with c3:
         st.markdown("<h4 style='color: #00ff88 !important; margin-bottom: 10px;'>IA TITAN SPEED</h4>", unsafe_allow_html=True)
-        # Botão direto, sem spinner demorado
         if st.button("ANALISAR AGORA (INSTANTÂNEO)"):
             df = get_data_fast(ativo)
             sig, score, motive = calculate_titan_speed(df)
@@ -271,7 +276,7 @@ def tela_dashboard():
     # Área Principal
     col_grafico, col_dados = st.columns([2.5, 1.5])
     
-    # 1. GRÁFICO TRADINGVIEW (VISUAL OFICIAL)
+    # 1. GRÁFICO TRADINGVIEW (VISUAL OFICIAL ADAPTÁVEL)
     with col_grafico:
         st.markdown(f"<h3 style='font-family: Orbitron; color: white;'>MERCADO REAL | {ativo}</h3>", unsafe_allow_html=True)
         tv_symbol = PAIRS[ativo]['tv']
@@ -306,9 +311,8 @@ def tela_dashboard():
         if st.session_state['analise']:
             res = st.session_state['analise']
             
-            # Checagem de segurança visual
             if res['ativo'] != ativo:
-                st.warning("⚠️ SINAL DESATUALIZADO. CLIQUE NOVAMENTE.")
+                st.warning("⚠️ SINAL DESATUALIZADO. CLIQUE NOVAMENTE PARA ATUALIZAR O ATIVO.")
             
             st.markdown("<div class='neon-card' style='text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;'>", unsafe_allow_html=True)
             st.markdown("<p style='color: #aaa !important; font-size: 1rem; letter-spacing: 2px;'>PRECISÃO DA ENTRADA</p>", unsafe_allow_html=True)
@@ -339,7 +343,7 @@ def tela_dashboard():
                 """, unsafe_allow_html=True)
                 st.markdown(f"<p style='color: #aaa !important;'>Cenário: {res['motive']}</p>", unsafe_allow_html=True)
                 if res['score'] == 50.0:
-                    st.markdown("<p style='font-size: 0.8rem; color: #ff0055;'>Tentando reconectar aos dados...</p>", unsafe_allow_html=True)
+                    st.markdown("<p style='font-size: 0.8rem; color: #ff0055;'>Tentando reconectar aos dados ou mercado fechado...</p>", unsafe_allow_html=True)
             
             st.markdown("</div>", unsafe_allow_html=True)
         else:
