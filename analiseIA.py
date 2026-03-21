@@ -109,7 +109,7 @@ if 'logado' not in st.session_state:
 if 'analise' not in st.session_state:
     st.session_state['analise'] = None
 
-CREDENCIAIS = {"wallace": "admin123", "cliente01": "pro2026"}
+CREDENCIAIS = {"wallace": "073851", "cliente01": "pro2026"}
 
 # --- 5. COLETOR DE DADOS OTIMIZADO (FAST-FETCH) ---
 def get_data_fast(symbol_key):
